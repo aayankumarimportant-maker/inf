@@ -1,6 +1,20 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 
+// NOTE on storage: this app does NOT store credentials, tokens, or PII secrets.
+// Only non-sensitive study data (worksheet history, mistakes, theme, courses, settings).
+// Passwords are entered for signup/login UX but never persisted. If you ever add
+// auth tokens, do not place them in localStorage — use httpOnly cookies instead.
 const STORAGE_KEY = 'infinitysheets_state_v1';
+const isProd = process.env.NODE_ENV === 'production';
+
+function logError(scope, err) {
+  // Single place to plug into a real error tracker (Sentry, etc.) later.
+  if (!isProd) {
+    // Surface details locally for debugging; stay quiet in production.
+    // eslint-disable-next-line no-console
+    console.warn(`[AppContext:${scope}]`, err);
+  }
+}
 
 const defaultState = {
   user: null, // { name, email, examTrack, subjects?, isDemo? }
@@ -27,17 +41,29 @@ export function AppProvider({ children }) {
   const [state, setState] = useState(defaultState);
   const [loaded, setLoaded] = useState(false);
 
+  // Hydrate from localStorage once on mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState({ ...defaultState, ...JSON.parse(raw) });
-    } catch (e) { /* ignore */ }
-    setLoaded(true);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setState({ ...defaultState, ...parsed });
+      }
+    } catch (err) {
+      logError('hydrate', err);
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
+  // Persist on every state change, but only after initial hydration completes
   useEffect(() => {
     if (!loaded) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      logError('persist', err);
+    }
   }, [state, loaded]);
 
   // Apply theme class to <html>
@@ -55,7 +81,7 @@ export function AppProvider({ children }) {
     setState((s) => ({
       ...s,
       user: { name: 'Demo Student', email: 'demo@infinitysheets.app', examTrack: 'CBSE', isDemo: true, subjects: [] },
-      onboardingDone: true, // demo skips onboarding
+      onboardingDone: true,
     }));
   }, []);
 
@@ -79,7 +105,6 @@ export function AppProvider({ children }) {
   const login = useCallback((email) => {
     setState((s) => {
       if (s.user && s.user.email === email) return s;
-      // create lightweight user if not present
       return { ...s, user: s.user || { name: email.split('@')[0], email, examTrack: 'SSLC' } };
     });
   }, []);
@@ -102,11 +127,14 @@ export function AppProvider({ children }) {
 
   const deleteAccount = useCallback(() => {
     setState(defaultState);
-    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (err) {
+      logError('deleteAccount', err);
+    }
   }, []);
 
   const recordWorksheet = useCallback((sheet) => {
-    // sheet = { id, subject, topic, difficulty, length, questions, answers, score, correct, total, durationSec, date }
     setState((s) => {
       const today = new Date().toDateString();
       const lastDate = s.lastStudyDate;
@@ -120,7 +148,7 @@ export function AppProvider({ children }) {
           streak = 1;
         }
       }
-      const goalDate = s.goalDate === today ? today : today;
+      const goalDate = today;
       const questionsToday = (s.goalDate === today ? s.questionsToday : 0) + sheet.total;
       const newMistakes = (sheet.questions || []).map((q, i) => {
         if (sheet.answers[i] !== q.a) {
@@ -164,8 +192,53 @@ export function AppProvider({ children }) {
     setState((s) => ({ ...s, courses: s.courses.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
   }, []);
 
+  // Stable context value — prevents needless rerenders of every consumer.
+  const value = useMemo(() => ({
+    state,
+    loaded,
+    signup,
+    login,
+    logout,
+    updateProfile,
+    updateSettings,
+    resetProgress,
+    deleteAccount,
+    recordWorksheet,
+    removeMistake,
+    finishTutorial,
+    restartTutorial,
+    addCourse,
+    removeCourse,
+    updateCourse,
+    toggleTheme,
+    startDemo,
+    completeOnboarding,
+    restartOnboarding,
+  }), [
+    state,
+    loaded,
+    signup,
+    login,
+    logout,
+    updateProfile,
+    updateSettings,
+    resetProgress,
+    deleteAccount,
+    recordWorksheet,
+    removeMistake,
+    finishTutorial,
+    restartTutorial,
+    addCourse,
+    removeCourse,
+    updateCourse,
+    toggleTheme,
+    startDemo,
+    completeOnboarding,
+    restartOnboarding,
+  ]);
+
   return (
-    <AppContext.Provider value={{ state, loaded, signup, login, logout, updateProfile, updateSettings, resetProgress, deleteAccount, recordWorksheet, removeMistake, finishTutorial, restartTutorial, addCourse, removeCourse, updateCourse, toggleTheme, startDemo, completeOnboarding, restartOnboarding }}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );
