@@ -23,9 +23,10 @@ export default function Worksheets({ go }) {
   const track = state.user?.examTrack || 'SSLC';
   const subjects = SUBJECTS[track] || [];
   const preselect = typeof window !== 'undefined' ? window.sessionStorage.getItem('preselect_subject') : null;
+  const preselectTopic = typeof window !== 'undefined' ? window.sessionStorage.getItem('preselect_topic') : null;
   const [subject, setSubject] = useState(preselect || subjects[0] || '');
   const topicsList = TOPICS[subject] || [];
-  const [topic, setTopic] = useState(topicsList[0] || '');
+  const [topic, setTopic] = useState((preselectTopic && topicsList.includes(preselectTopic)) ? preselectTopic : (topicsList[0] || ''));
   const [answerType, setAnswerType] = useState('Multiple choice');
   const [difficulty, setDifficulty] = useState('Mixed exam practice');
   const [duration, setDuration] = useState('Untimed');
@@ -45,7 +46,8 @@ export default function Worksheets({ go }) {
 
   useEffect(() => {
     if (preselect) window.sessionStorage.removeItem('preselect_subject');
-  }, [preselect]);
+    if (preselectTopic) window.sessionStorage.removeItem('preselect_topic');
+  }, [preselect, preselectTopic]);
 
   useEffect(() => {
     if (stage !== 'take' || duration === 'Untimed') return;

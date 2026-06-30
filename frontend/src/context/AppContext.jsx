@@ -3,13 +3,14 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 const STORAGE_KEY = 'infinitysheets_state_v1';
 
 const defaultState = {
-  user: null, // { name, email, examTrack }
-  worksheets: [], // array of completed worksheet results
-  mistakes: [], // wrong answer history
-  courses: [], // user-added courses
+  user: null, // { name, email, examTrack, isDemo? }
+  worksheets: [],
+  mistakes: [],
+  courses: [],
   streak: 0,
   lastStudyDate: null,
   tutorialDone: false,
+  theme: 'light', // 'light' | 'dark'
   settings: {
     dailyGoal: 10,
     defaultDifficulty: 'Mixed exam practice',
@@ -37,6 +38,25 @@ export function AppProvider({ children }) {
     if (!loaded) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }, [state, loaded]);
+
+  // Apply theme class to <html>
+  useEffect(() => {
+    const root = document.documentElement;
+    if (state.theme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
+  }, [state.theme]);
+
+  const toggleTheme = useCallback(() => {
+    setState((s) => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
+  }, []);
+
+  const startDemo = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      user: { name: 'Demo Student', email: 'demo@infinitysheets.app', examTrack: 'CBSE', isDemo: true },
+      tutorialDone: true,
+    }));
+  }, []);
 
   const signup = useCallback((user) => {
     setState((s) => ({ ...s, user }));
@@ -131,7 +151,7 @@ export function AppProvider({ children }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, loaded, signup, login, logout, updateProfile, updateSettings, resetProgress, deleteAccount, recordWorksheet, removeMistake, finishTutorial, restartTutorial, addCourse, removeCourse, updateCourse }}>
+    <AppContext.Provider value={{ state, loaded, signup, login, logout, updateProfile, updateSettings, resetProgress, deleteAccount, recordWorksheet, removeMistake, finishTutorial, restartTutorial, addCourse, removeCourse, updateCourse, toggleTheme, startDemo }}>
       {children}
     </AppContext.Provider>
   );

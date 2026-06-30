@@ -17,6 +17,18 @@
     --color-text: #0f172a;           /* dark slate */
     --color-text-2: #64748b;         /* gray */
     --color-border: #e6e4dd;
+    --color-overlay: rgba(15, 23, 42, 0.04);
+}
+
+html.dark {
+    --color-bg: #07091a;             /* deep space */
+    --color-bg-2: #0c1230;
+    --color-card: #0f1733;
+    --color-text: #e8ecff;
+    --color-text-2: #8b95c4;
+    --color-border: #1d2752;
+    --color-overlay: rgba(99, 102, 241, 0.08);
+    color-scheme: dark;
 }
 
 html, body {
@@ -181,7 +193,123 @@ html, body {
 /* circular progress ring */
 .ring-track { stroke: #ede9fe; }
 .ring-fill { stroke: #7c3aed; transition: stroke-dashoffset 0.6s ease; }
+html.dark .ring-track { stroke: #1e2a55; }
+html.dark .ring-fill { stroke: #a78bfa; }
 
 /* tiny chevron rotation */
 .chev-rotate { transition: transform 0.2s ease; }
 .chev-open { transform: rotate(180deg); }
+
+/* ----- Futuristic Infinity Background ----- */
+.infinity-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 0;
+}
+.infinity-bg svg {
+    position: absolute;
+    opacity: 0.55;
+    filter: blur(0.2px);
+}
+.infinity-bg .inf-1 { top: -40px; left: -60px; transform: rotate(-12deg); animation: floaty 14s ease-in-out infinite; }
+.infinity-bg .inf-2 { top: 30%; right: -80px; transform: rotate(18deg); animation: floaty 18s ease-in-out infinite reverse; }
+.infinity-bg .inf-3 { bottom: -60px; left: 25%; transform: rotate(-4deg); animation: floaty 22s ease-in-out infinite; }
+.infinity-bg .inf-4 { top: 65%; left: -40px; transform: rotate(6deg); animation: floaty 16s ease-in-out infinite reverse; }
+.infinity-bg .inf-dot { position: absolute; border-radius: 9999px; filter: blur(40px); opacity: 0.5; }
+
+@keyframes floaty {
+    0%, 100% { translate: 0 0; }
+    50% { translate: 0 18px; }
+}
+
+/* subtle futuristic grid for hero/dark sections */
+.grid-fade {
+    background-image:
+        linear-gradient(to right, rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+html.dark .grid-fade {
+    background-image:
+        linear-gradient(to right, rgba(139, 92, 246, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(139, 92, 246, 0.12) 1px, transparent 1px);
+}
+
+.glow-blue {
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25), 0 12px 40px -12px rgba(37, 99, 235, 0.45);
+}
+.glow-violet {
+    box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.25), 0 12px 40px -12px rgba(124, 58, 237, 0.45);
+}
+
+/* gradient text */
+.text-gradient-vbc {
+    background: linear-gradient(90deg, #7c3aed 0%, #2563eb 50%, #06b6d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* ===== Dark mode utility overrides for tailwind classes used across app ===== */
+html.dark body { background: var(--color-bg); color: var(--color-text); }
+html.dark .bg-white { background-color: var(--color-card) !important; }
+html.dark .bg-slate-50 { background-color: #0c1230 !important; }
+html.dark .bg-slate-100 { background-color: #131a3a !important; }
+html.dark .bg-zinc-50 { background-color: #0c1230 !important; }
+html.dark .bg-zinc-100 { background-color: #131a3a !important; }
+
+html.dark .text-slate-900 { color: #e8ecff !important; }
+html.dark .text-slate-800 { color: #dbe1ff !important; }
+html.dark .text-slate-700 { color: #c5cdf5 !important; }
+html.dark .text-slate-600 { color: #aab3e0 !important; }
+html.dark .text-slate-500 { color: #8b95c4 !important; }
+html.dark .text-slate-400 { color: #6b75a8 !important; }
+html.dark .text-zinc-900 { color: #e8ecff !important; }
+html.dark .text-zinc-700 { color: #c5cdf5 !important; }
+html.dark .text-zinc-600 { color: #aab3e0 !important; }
+html.dark .text-zinc-500 { color: #8b95c4 !important; }
+html.dark .text-zinc-400 { color: #6b75a8 !important; }
+
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-zinc-100,
+html.dark .border-zinc-200 { border-color: #1d2752 !important; }
+
+html.dark .bg-violet-50 { background-color: rgba(124, 58, 237, 0.16) !important; }
+html.dark .bg-violet-100 { background-color: rgba(124, 58, 237, 0.22) !important; }
+html.dark .bg-blue-50 { background-color: rgba(37, 99, 235, 0.16) !important; }
+html.dark .bg-blue-100 { background-color: rgba(37, 99, 235, 0.22) !important; }
+html.dark .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.16) !important; }
+html.dark .bg-cyan-100 { background-color: rgba(6, 182, 212, 0.22) !important; }
+html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.16) !important; }
+html.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.22) !important; }
+html.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.14) !important; }
+
+html.dark .text-violet-600,
+html.dark .text-violet-700 { color: #c4b5fd !important; }
+html.dark .text-blue-600,
+html.dark .text-blue-700 { color: #93c5fd !important; }
+html.dark .text-cyan-600,
+html.dark .text-cyan-700 { color: #67e8f9 !important; }
+html.dark .text-emerald-600,
+html.dark .text-emerald-700 { color: #6ee7b7 !important; }
+
+html.dark .section-light { background: #0c1230 !important; }
+html.dark .section-bg { background: #07091a !important; }
+
+/* keep section-dark as is in dark mode */
+html.dark .section-dark { background: #03050f !important; }
+
+/* dashboard preview elements look futuristic in dark too */
+html.dark .card-soft { background: var(--color-card); border-color: var(--color-border); }
+html.dark .card-soft:hover { border-color: #2b3a78; box-shadow: 0 8px 30px -10px rgba(99, 102, 241, 0.35); }
+
+html.dark .btn-outline-dark { background: var(--color-card); color: var(--color-text); border-color: var(--color-border); }
+html.dark .btn-outline-dark:hover { background: #16204a; border-color: #2b3a78; }
+
+html.dark .input-base { background: #0f1733; border-color: #1d2752; color: var(--color-text); }
+html.dark .input-base:focus { border-color: #8b5cf6; }
