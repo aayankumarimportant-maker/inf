@@ -21,7 +21,7 @@ export default function Mistakes() {
   }
 
   return (
-    <div className="flex flex-col gap-3 max-w-[820px]">
+    <div className="flex flex-col gap-3 max-w-[820px]" data-testid="mistakes-list">
       {list.map((m) => {
         const shown = reveal[m.id];
         return (

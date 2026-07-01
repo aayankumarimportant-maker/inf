@@ -57,7 +57,6 @@ export default function Worksheets({ go }) {
     }
     const id = setInterval(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line
   }, [stage, timeLeft]);
 
   const start = () => {
@@ -120,7 +119,7 @@ export default function Worksheets({ go }) {
           <h3 className="text-[18px] font-semibold mb-5 leading-snug">{q.q}</h3>
           <div className="flex flex-col gap-2.5">
             {q.options.map((opt, i) => (
-              <button key={i}
+              <button key={`${q.q}-${i}`}
                 onClick={() => { const c = [...answers]; c[current] = i; setAnswers(c); }}
                 className={`text-left px-4 py-3 rounded-lg border text-[14px] transition-colors ${answers[current] === i ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'}`}>
                 <span className="inline-block w-6 text-zinc-500 font-medium">{String.fromCharCode(65 + i)}.</span>
@@ -162,7 +161,7 @@ export default function Worksheets({ go }) {
           {result.questions.map((q, i) => {
             const ok = result.answers[i] === q.a;
             return (
-              <div key={i} className={`rounded-xl border p-4 ${ok ? 'border-zinc-200' : 'border-rose-200 bg-rose-50/40'}`}>
+              <div key={`${q.q}-${i}`} className={`rounded-xl border p-4 ${ok ? 'border-zinc-200' : 'border-rose-200 bg-rose-50/40'}`}>
                 <div className="flex items-start gap-3">
                   <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-white ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`}>
                     {ok ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}

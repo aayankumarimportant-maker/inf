@@ -20,7 +20,10 @@ export default function ProgressView() {
 
   // Chronological order (oldest first)
   const chronological = useMemo(() => [...ws].slice().reverse(), [ws]);
-  const visibleWS = useMemo(() => chronological.filter((w) => !isHidden(w.subject)), [chronological, hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  const visibleWS = useMemo(
+    () => chronological.filter((w) => !hidden[w.subject]),
+    [chronological, hidden]
+  );
 
   // Per-subject series (each point is a worksheet attempt)
   const series = useMemo(() => {

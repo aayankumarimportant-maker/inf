@@ -29,7 +29,7 @@ function Stat({ label, value }) {
 function DaysStat({ days, subLabel }) {
   const has = days !== null && days !== undefined;
   return (
-    <div className="rounded-xl border border-violet-200/70 p-4 bg-violet-50 relative overflow-hidden">
+    <div className="rounded-xl border border-violet-200/70 p-4 bg-violet-50 relative overflow-hidden" data-testid="days-until-exam">
       <div className="relative text-[10px] tracking-[0.14em] uppercase font-semibold text-violet-700">Days until exam</div>
       <div className="relative text-[24px] font-semibold mt-1 text-slate-900 tabular-nums">
         {has ? days : '\u2014'}
