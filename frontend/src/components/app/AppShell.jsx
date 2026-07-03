@@ -25,17 +25,19 @@ const BASE_NAV = [
   { key: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { key: 'courses', label: 'My Courses', Icon: GraduationCap },
   { key: 'study', label: 'Start Studying', Icon: Brain },
-  { key: 'worksheets', label: 'Worksheets', Icon: FileText },
   { key: 'qbank', label: 'Question Bank', Icon: Library },
   { key: 'history', label: 'Worksheet History', Icon: History },
   { key: 'progress', label: 'Progress', Icon: TrendingUp },
   { key: 'strengths', label: 'Strengths & Weaknesses', Icon: Dumbbell },
   { key: 'recommendations', label: 'Smart Recommendations', Icon: Sparkles },
-  { key: 'mistakes', label: 'Mistake History', Icon: AlertTriangle },
   { key: 'profile', label: 'Profile', Icon: User },
   { key: 'settings', label: 'Settings', Icon: Settings },
 ];
 const ADMIN_ITEM = { key: 'admin', label: 'Admin', Icon: Shield };
+const HIDDEN_ROUTES = [
+  { key: 'worksheets', label: 'Create a Worksheet', Icon: FileText },
+  { key: 'mistakes', label: 'Mistake History', Icon: AlertTriangle },
+];
 
 function parseHash(hash) {
   const raw = (hash || '').replace(/^#/, '');
@@ -73,7 +75,8 @@ export default function AppShell({ hash }) {
   const isDemo = !!state.user?.isDemo;
   const isAdmin = state.user?.role === 'admin';
   const NAV = isAdmin ? [...BASE_NAV, ADMIN_ITEM] : BASE_NAV;
-  const current = NAV.find((n) => n.key === active) || NAV[0];
+  const ALL_ITEMS = [...NAV, ...HIDDEN_ROUTES];
+  const current = ALL_ITEMS.find((n) => n.key === active) || NAV[0];
 
   const go = (k) => { window.location.hash = `#${k}`; };
   const isDark = state.theme === 'dark';

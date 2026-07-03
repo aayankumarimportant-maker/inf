@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { SUBJECTS, SUBJECT_INFO } from '../../data/mock';
-import { BookOpen, ArrowRight } from 'lucide-react';
+import { BookOpen, ArrowRight, FileText } from 'lucide-react';
 import InfinityBackground from '../decor/InfinityBackground';
 import SubjectOverview from './SubjectOverview';
 
@@ -33,7 +33,16 @@ export default function StartStudying({ go, subjectParam }) {
     <div className="relative">
       <InfinityBackground variant="soft" />
       <div className="relative">
-        <p className="text-[14px] text-slate-500 mb-6">Pick a subject to see its overview and create a worksheet tailored to your level.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+          <p className="text-[14px] text-slate-500 max-w-[640px]">Pick a subject to see its overview and create a worksheet tailored to your level.</p>
+          <button
+            onClick={() => { window.location.hash = '#worksheets'; }}
+            data-testid="create-worksheet-btn"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white bg-blue-600 hover:opacity-95 transition-opacity shrink-0"
+          >
+            <FileText className="w-4 h-4" /> Create a Worksheet
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {list.map((s) => {
             const info = SUBJECT_INFO[s] || { emoji: '\u25A0', tagline: 'Practice and improve.', tone: 'primary' };
