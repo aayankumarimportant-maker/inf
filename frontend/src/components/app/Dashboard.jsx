@@ -100,6 +100,10 @@ export default function Dashboard({ go }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <div>
+        <h2 className="text-[28px] font-semibold tracking-tight text-slate-900">Welcome back, {state.user?.name || 'Student'}.</h2>
+        <p className="text-[14px] text-slate-500 mt-1">Here is your study overview.</p>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <DaysStat days={examCountdown} subLabel={examLabel} />
         <Stat label="Study streak" value={`${state.streak || 0} ${(state.streak || 0) === 1 ? 'day' : 'days'}`} />

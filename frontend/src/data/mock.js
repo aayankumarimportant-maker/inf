@@ -12,6 +12,20 @@ export const EXAM_TRACKS = [
   { id: 'NEET', name: 'NEET', title: 'High-volume recall and accuracy', desc: 'Biology-heavy revision plus chemistry and physics practice.' },
 ];
 
+// Default duration (in minutes) of the actual exam for each track. Used as the
+// default value for the worksheet duration slider.
+export const EXAM_DURATIONS = {
+  SSLC: 150,
+  CBSE: 180,
+  ICSE: 150,
+  IGCSE: 120,
+  ASA: 90,
+  IB: 90,
+  SAT: 134,
+  JEE: 180,
+  NEET: 200,
+};
+
 export const FEATURES = [
   { title: 'Progress Tracking', desc: 'Visual dashboards that show mastery, readiness, completed worksheets, and study streaks.', icon: 'LineChart', tone: 'primary' },
   { title: 'AI Weakness Analysis', desc: 'Automatically discover which concepts need the most attention.', icon: 'Brain', tone: 'secondary' },
