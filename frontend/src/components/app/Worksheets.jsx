@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SUBJECTS, TOPICS, QUESTION_BANK, FALLBACK_QUESTIONS, EXAM_DURATIONS } from '../../data/mock';
-import { Check, X, Clock, ChevronLeft, ChevronRight, Sparkles, FileText } from 'lucide-react';
+import { Check, X, Clock, ChevronLeft, ChevronRight, Sparkles, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ANSWER_TYPES = ['Multiple choice', 'Typed response', 'Exam style'];
@@ -10,14 +10,103 @@ const DURATION_MIN = 5;
 const DURATION_MAX = 240;
 const DURATION_STEP = 5;
 
-function buildQuestions(topics, n) {
+/* ================== Normalization + grading helpers ================== */
+
+function normalizeText(s) {
+  return (s || '')
+    .toString()
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
+    .replace(/[^a-z0-9\s\.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function gradeTyped(userAnswer, expected, aliases = []) {
+  const u = normalizeText(userAnswer);
+  if (!u) return false;
+  const candidates = [expected, ...(aliases || [])].map(normalizeText).filter(Boolean);
+  if (!candidates.length) return false;
+  // Exact match after normalization, OR one contains the other (short answers).
+  return candidates.some((c) => u === c || (c.length >= 3 && (u.includes(c) || c.includes(u))));
+}
+
+function gradeExamStyle(userAnswer, keywords = []) {
+  const kw = (keywords || []).map(normalizeText).filter(Boolean);
+  if (!kw.length) return null; // not gradable → treat as ungraded (won't count as mistake)
+  const u = normalizeText(userAnswer);
+  if (!u) return false;
+  const hit = kw.filter((k) => u.includes(k)).length;
+  // Pass threshold: at least half of the keywords must appear.
+  return hit / kw.length >= 0.5;
+}
+
+/* ================== Question shaping ================== */
+
+// Convert a raw MCQ pool item into a question of the requested answer type.
+function toAnswerType(base, answerType) {
+  if (answerType === 'Multiple choice') {
+    return { ...base, answerType };
+  }
+  if (answerType === 'Typed response') {
+    // Use the correct MCQ option text as the expected typed answer.
+    const expected = base.options ? base.options[base.a] : '';
+    return {
+      ...base,
+      answerType,
+      typedAnswer: expected,
+      typedAliases: [],
+      // Keep options so we can still display correct answer on results screen.
+    };
+  }
+  // Exam style
+  const expected = base.options ? base.options[base.a] : '';
+  const keywords = Array.from(new Set(
+    normalizeText(expected).split(' ').filter((w) => w.length >= 3)
+  )).slice(0, 4);
+  return {
+    ...base,
+    answerType,
+    examAnswer: expected,
+    examKeywords: keywords,
+  };
+}
+
+function buildQuestions({ topics, answerType, difficulty, length, pastPapers, aiGenerated, pastPaperPool }) {
   const list = (topics && topics.length) ? topics : [];
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const t = list[i % Math.max(1, list.length)] || null;
+  // Past-paper questions matching selected topics + answer type.
+  const ppMatching = (pastPaperPool || []).filter((p) => list.includes(p.topic) && p.answerType === answerType);
+  // Filter by difficulty if it matches; otherwise still include.
+  const preferPP = pastPapers && ppMatching.length > 0;
+  const preferAI = !!aiGenerated;
+
+  const aiPool = () => {
+    const t = list[Math.floor(Math.random() * Math.max(1, list.length))] || null;
     const pool = (t && QUESTION_BANK[t]) || FALLBACK_QUESTIONS;
-    const base = pool[i % pool.length];
-    out.push({ ...base, _topic: t });
+    const base = pool[Math.floor(Math.random() * pool.length)] || pool[0];
+    return toAnswerType({ ...base, _topic: t, difficulty, source: 'ai-generated' }, answerType);
+  };
+  const ppPool = (i) => {
+    if (!ppMatching.length) return null;
+    const base = ppMatching[i % ppMatching.length];
+    // Normalize shape so it matches AI-shape.
+    const shaped = { ...base, _topic: base.topic, source: 'past-paper' };
+    // Ensure options+a exist for MCQ, typedAnswer for typed, examKeywords for exam.
+    return shaped;
+  };
+
+  const out = [];
+  for (let i = 0; i < length; i++) {
+    let picked = null;
+    if (preferPP && preferAI) {
+      picked = (i % 2 === 0) ? ppPool(Math.floor(i / 2)) : aiPool();
+    } else if (preferPP) {
+      picked = ppPool(i);
+    } else if (preferAI) {
+      picked = aiPool();
+    }
+    if (!picked) picked = aiPool();
+    out.push(picked);
   }
   return out;
 }
@@ -29,10 +118,13 @@ function fmtDuration(min) {
   return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
 }
 
+/* ================== Main component ================== */
+
 export default function Worksheets({ go }) {
   const { state, recordWorksheet } = useApp();
   const track = state.user?.examTrack || 'SSLC';
   const examMinutes = EXAM_DURATIONS[track] || 60;
+  const pastPaperPool = state.pastPapers || [];
 
   // Only subjects the user has actually chosen (from onboarding / courses)
   const allTrackSubjects = SUBJECTS[track] || [];
@@ -44,7 +136,6 @@ export default function Worksheets({ go }) {
       subs.forEach((s) => { if (s && !fromCourses.includes(s)) fromCourses.push(s); });
     });
     const merged = Array.from(new Set([...fromUser, ...fromCourses])).filter((s) => allTrackSubjects.includes(s));
-    // Fall back to all subjects for the track if none picked (edge case).
     return merged.length ? merged : allTrackSubjects;
   }, [state.user?.subjects, state.courses, allTrackSubjects]);
 
@@ -67,15 +158,14 @@ export default function Worksheets({ go }) {
   const [pastPapers, setPastPapers] = useState(false);
   const [aiGenerated, setAiGenerated] = useState(true);
 
-  const [stage, setStage] = useState('build'); // build | take | result
+  const [stage, setStage] = useState('build');
   const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]);
+  const [answers, setAnswers] = useState([]); // holds number (MCQ index) or string (typed/exam)
   const [current, setCurrent] = useState(0);
   const [startTime, setStartTime] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [result, setResult] = useState(null);
 
-  // When the subject changes, reset topics to the first topic of the new subject.
   useEffect(() => {
     const t = TOPICS[subject] || [];
     setTopics(t.length ? [t[0]] : []);
@@ -88,10 +178,7 @@ export default function Worksheets({ go }) {
 
   useEffect(() => {
     if (stage !== 'take') return;
-    if (timeLeft <= 0) {
-      finalize();
-      return;
-    }
+    if (timeLeft <= 0) { finalize(); return; }
     const id = setInterval(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,23 +188,47 @@ export default function Worksheets({ go }) {
     setTopics((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
   };
 
+  // Count of admin-uploaded past-paper questions matching current filters.
+  const ppAvailable = useMemo(() => {
+    return (pastPaperPool || []).filter((p) => topics.includes(p.topic) && p.answerType === answerType).length;
+  }, [pastPaperPool, topics, answerType]);
+
   const start = () => {
     if (!subject) { toast.error('Select a subject'); return; }
     if (!topics.length) { toast.error('Select at least one topic'); return; }
     if (!pastPapers && !aiGenerated) { toast.error('Pick past papers, AI generated, or both'); return; }
-    // Auto-size the worksheet: roughly one question every ~3 minutes, min 3, cap 30.
+    if (pastPapers && !aiGenerated && ppAvailable === 0) {
+      toast.error('No past-paper questions match this selection. Ask an admin to upload some, or also tick AI generated.');
+      return;
+    }
     const length = Math.max(3, Math.min(30, Math.round(duration / 3)));
-    const qs = buildQuestions(topics, length);
+    const qs = buildQuestions({ topics, answerType, difficulty, length, pastPapers, aiGenerated, pastPaperPool });
     setQuestions(qs);
-    setAnswers(new Array(qs.length).fill(-1));
+    // For MCQ, -1 means unanswered. For typed/exam, empty string.
+    setAnswers(new Array(qs.length).fill(answerType === 'Multiple choice' ? -1 : ''));
     setCurrent(0);
     setStartTime(Date.now());
     setTimeLeft(duration * 60);
     setStage('take');
   };
 
+  const gradeOne = (q, given) => {
+    if (q.answerType === 'Multiple choice') {
+      return given === q.a;
+    }
+    if (q.answerType === 'Typed response') {
+      return gradeTyped(given, q.typedAnswer, q.typedAliases || []);
+    }
+    // Exam style
+    const graded = gradeExamStyle(given, q.examKeywords || []);
+    // If not gradable (no keywords), give credit for any non-empty response.
+    if (graded === null) return !!(given && given.toString().trim());
+    return graded;
+  };
+
   const finalize = () => {
-    const correct = questions.reduce((acc, q, i) => acc + (answers[i] === q.a ? 1 : 0), 0);
+    const results = questions.map((q, i) => gradeOne(q, answers[i]));
+    const correct = results.filter(Boolean).length;
     const durationSec = Math.round((Date.now() - startTime) / 1000);
     const sheet = {
       id: `ws_${Date.now()}`,
@@ -132,6 +243,7 @@ export default function Worksheets({ go }) {
       aiGenerated,
       questions,
       answers,
+      results,
       total: questions.length,
       correct,
       score: Math.round((correct / questions.length) * 100),
@@ -148,11 +260,22 @@ export default function Worksheets({ go }) {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  // ===== Take stage =====
+  const setAnswerAt = (idx, value) => {
+    setAnswers((prev) => {
+      const c = [...prev];
+      c[idx] = value;
+      return c;
+    });
+  };
+
+  /* ================== Take stage ================== */
   if (stage === 'take') {
     const q = questions[current];
+    const isMCQ = q.answerType === 'Multiple choice';
+    const isTyped = q.answerType === 'Typed response';
+    const isExam = q.answerType === 'Exam style';
     return (
-      <div className="max-w-[800px]">
+      <div className="max-w-[820px]">
         <div className="flex items-center justify-between mb-5">
           <div className="text-[13px] text-zinc-500">{subject} · {topics.join(' · ')}</div>
           <div className="inline-flex items-center gap-2 text-[13px] text-zinc-700 bg-blue-50 px-3 py-1.5 rounded-md">
@@ -160,21 +283,69 @@ export default function Worksheets({ go }) {
           </div>
         </div>
         <div className="rounded-2xl border border-zinc-200 p-6">
-          <div className="text-[12px] text-zinc-500 mb-2">Question {current + 1} of {questions.length}{q._topic ? ` · ${q._topic}` : ''}</div>
+          <div className="text-[12px] text-zinc-500 mb-2 flex items-center gap-2">
+            <span>Question {current + 1} of {questions.length}{q._topic ? ` · ${q._topic}` : ''}</span>
+            {q.source === 'past-paper' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-semibold">
+                <FileText className="w-3 h-3" /> Past paper{q.year ? ` \u00b7 ${q.year}` : ''}
+              </span>
+            )}
+            {q.source === 'ai-generated' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-semibold">
+                <Sparkles className="w-3 h-3" /> AI generated
+              </span>
+            )}
+          </div>
           <div className="h-1.5 rounded-full bg-zinc-100 overflow-hidden mb-5">
             <div className="h-full bg-blue-500 transition-all" style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
           </div>
           <h3 className="text-[18px] font-semibold mb-5 leading-snug">{q.q}</h3>
-          <div className="flex flex-col gap-2.5">
-            {q.options.map((opt, i) => (
-              <button key={`${q.q}-${i}`}
-                onClick={() => { const c = [...answers]; c[current] = i; setAnswers(c); }}
-                className={`text-left px-4 py-3 rounded-lg border text-[14px] transition-colors ${answers[current] === i ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'}`}>
-                <span className="inline-block w-6 text-zinc-500 font-medium">{String.fromCharCode(65 + i)}.</span>
-                <span>{opt}</span>
-              </button>
-            ))}
-          </div>
+
+          {isMCQ && (
+            <div className="flex flex-col gap-2.5">
+              {(q.options || []).map((opt, i) => (
+                <button key={`${q.q}-${i}`}
+                  onClick={() => setAnswerAt(current, i)}
+                  className={`text-left px-4 py-3 rounded-lg border text-[14px] transition-colors ${answers[current] === i ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'}`}>
+                  <span className="inline-block w-6 text-zinc-500 font-medium">{String.fromCharCode(65 + i)}.</span>
+                  <span>{opt}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isTyped && (
+            <div>
+              <input
+                type="text"
+                autoFocus
+                value={answers[current] || ''}
+                onChange={(e) => setAnswerAt(current, e.target.value)}
+                placeholder="Type your answer"
+                className="input-base w-full text-[14px]"
+                data-testid={`typed-input-${current}`}
+              />
+              <div className="text-[11.5px] text-slate-500 mt-2">Answers are checked with lenient matching (case, punctuation, extra words are ignored).</div>
+            </div>
+          )}
+
+          {isExam && (
+            <div>
+              <textarea
+                autoFocus
+                rows={6}
+                value={answers[current] || ''}
+                onChange={(e) => setAnswerAt(current, e.target.value)}
+                placeholder="Write a full exam-style response. Include the key ideas the examiner is looking for."
+                className="input-base w-full text-[14px]"
+                data-testid={`exam-input-${current}`}
+              />
+              {(q.examKeywords || []).length > 0 && (
+                <div className="text-[11.5px] text-slate-500 mt-2">Graded on presence of key ideas from the mark scheme.</div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mt-6">
             <button onClick={() => setCurrent((c) => Math.max(0, c - 1))} disabled={current === 0} className="btn-outline-dark inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13.5px] disabled:opacity-40">
               <ChevronLeft className="w-4 h-4" /> Previous
@@ -192,7 +363,7 @@ export default function Worksheets({ go }) {
     );
   }
 
-  // ===== Result stage =====
+  /* ================== Result stage ================== */
   if (stage === 'result' && result) {
     return (
       <div className="max-w-[820px]">
@@ -208,7 +379,11 @@ export default function Worksheets({ go }) {
         </div>
         <div className="flex flex-col gap-3">
           {result.questions.map((q, i) => {
-            const ok = result.answers[i] === q.a;
+            const ok = result.results ? result.results[i] : (result.answers[i] === q.a);
+            const isMCQ = q.answerType === 'Multiple choice';
+            const isTyped = q.answerType === 'Typed response';
+            const isExam = q.answerType === 'Exam style';
+            const given = result.answers[i];
             return (
               <div key={`${q.q}-${i}`} className={`rounded-xl border p-4 ${ok ? 'border-zinc-200' : 'border-rose-200 bg-rose-50/40'}`}>
                 <div className="flex items-start gap-3">
@@ -217,9 +392,30 @@ export default function Worksheets({ go }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[14px] font-medium text-zinc-900">{i + 1}. {q.q}</div>
-                    <div className="text-[13px] text-zinc-600 mt-1">Correct: <span className="font-medium text-zinc-800">{q.options[q.a]}</span></div>
-                    {!ok && result.answers[i] !== -1 && (
-                      <div className="text-[13px] text-rose-600 mt-0.5">Your answer: {q.options[result.answers[i]]}</div>
+                    {isMCQ && (
+                      <>
+                        <div className="text-[13px] text-zinc-600 mt-1">Correct: <span className="font-medium text-zinc-800">{q.options[q.a]}</span></div>
+                        {!ok && given !== -1 && (
+                          <div className="text-[13px] text-rose-600 mt-0.5">Your answer: {q.options[given]}</div>
+                        )}
+                      </>
+                    )}
+                    {isTyped && (
+                      <>
+                        <div className="text-[13px] text-zinc-600 mt-1">Expected: <span className="font-medium text-emerald-700">{q.typedAnswer || (q.options ? q.options[q.a] : '')}</span></div>
+                        <div className={`text-[13px] mt-0.5 ${ok ? 'text-slate-600' : 'text-rose-600'}`}>Your answer: {given || <span className="italic text-slate-400">(blank)</span>}</div>
+                      </>
+                    )}
+                    {isExam && (
+                      <>
+                        {(q.examKeywords || []).length > 0 && (
+                          <div className="text-[13px] text-zinc-600 mt-1">Key ideas: <span className="font-medium text-slate-800">{(q.examKeywords || []).join(', ')}</span></div>
+                        )}
+                        {q.examAnswer && (
+                          <div className="text-[13px] text-zinc-600 mt-0.5">Model answer: <span className="font-medium text-slate-800">{q.examAnswer}</span></div>
+                        )}
+                        <div className={`text-[13px] mt-0.5 whitespace-pre-wrap ${ok ? 'text-slate-600' : 'text-rose-600'}`}>Your answer: {given || <span className="italic text-slate-400">(blank)</span>}</div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -235,7 +431,7 @@ export default function Worksheets({ go }) {
     );
   }
 
-  // ===== Build stage =====
+  /* ================== Build stage ================== */
   const isDurationDefault = duration === examMinutes;
 
   return (
@@ -283,7 +479,7 @@ export default function Worksheets({ go }) {
           <Segmented value={difficulty} onChange={setDifficulty} options={DIFFICULTIES} />
         </Field>
 
-        <Field label={`Duration · ${fmtDuration(duration)}${isDurationDefault ? ' (real exam length)' : ''}`}>
+        <Field label={`Duration \u00b7 ${fmtDuration(duration)}${isDurationDefault ? ' (real exam length)' : ''}`}>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -314,7 +510,7 @@ export default function Worksheets({ go }) {
           <div className="text-[10px] tracking-[0.14em] uppercase font-semibold text-zinc-500 mb-2">Question source</div>
           <div className="flex flex-col sm:flex-row gap-2.5">
             <CheckboxCard
-              label="Past paper questions"
+              label={<span>Past paper questions <span className="text-slate-500 font-normal">({ppAvailable} available)</span></span>}
               icon={<FileText className="w-4 h-4 text-slate-600" />}
               checked={pastPapers}
               onChange={setPastPapers}
@@ -328,6 +524,9 @@ export default function Worksheets({ go }) {
               testid="ws-ai-generated"
             />
           </div>
+          {pastPapers && ppAvailable === 0 && (
+            <div className="text-[11.5px] text-amber-700 mt-2 inline-flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> No past-paper questions match this subject / topic / answer type. Uploads live on the Admin page.</div>
+          )}
           {!pastPapers && !aiGenerated && (
             <div className="text-[11.5px] text-rose-600 mt-2">Pick at least one question source.</div>
           )}
@@ -335,9 +534,6 @@ export default function Worksheets({ go }) {
       </div>
 
       <button onClick={start} data-testid="ws-start" className="btn-violet mt-5 px-5 py-3 rounded-lg text-[14px] font-medium">Create interactive worksheet</button>
-      {answerType !== 'Multiple choice' && (
-        <p className="text-[12.5px] text-zinc-500 mt-3">Note: This demo evaluates multiple choice only. Typed and exam-style answers won&apos;t be auto-graded.</p>
-      )}
     </div>
   );
 }

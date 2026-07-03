@@ -43,6 +43,7 @@ const defaultState = {
   worksheets: [],
   mistakes: [],
   courses: [],
+  pastPapers: [], // admin-uploaded past-paper questions
   streak: 0,
   lastStudyDate: null,
   tutorialDone: false,
@@ -230,8 +231,21 @@ export function AppProvider({ children }) {
       const goalDate = today;
       const questionsToday = (s.goalDate === today ? s.questionsToday : 0) + sheet.total;
       const newMistakes = (sheet.questions || []).map((q, i) => {
-        if (sheet.answers[i] !== q.a) {
-          return { id: `${sheet.id}-${i}`, subject: sheet.subject, topic: sheet.topic, question: q.q, options: q.options, correct: q.a, given: sheet.answers[i], date: sheet.date };
+        const wrong = Array.isArray(sheet.results) ? sheet.results[i] === false : sheet.answers[i] !== q.a;
+        if (wrong) {
+          return {
+            id: `${sheet.id}-${i}`,
+            subject: sheet.subject,
+            topic: q._topic || sheet.topic,
+            question: q.q,
+            options: q.options || null,
+            correct: q.a,
+            given: sheet.answers[i],
+            answerType: q.answerType || sheet.answerType || 'Multiple choice',
+            typedAnswer: q.typedAnswer || null,
+            examKeywords: q.examKeywords || null,
+            date: sheet.date,
+          };
         }
         return null;
       }).filter(Boolean);
@@ -271,6 +285,17 @@ export function AppProvider({ children }) {
     setState((s) => ({ ...s, courses: s.courses.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
   }, []);
 
+  const addPastPaper = useCallback((pp) => {
+    setState((s) => ({
+      ...s,
+      pastPapers: [{ id: `pp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, addedAt: new Date().toISOString(), ...pp }, ...(s.pastPapers || [])],
+    }));
+  }, []);
+
+  const removePastPaper = useCallback((id) => {
+    setState((s) => ({ ...s, pastPapers: (s.pastPapers || []).filter((p) => p.id !== id) }));
+  }, []);
+
   // Stable context value — prevents needless rerenders of every consumer.
   const value = useMemo(() => ({
     state,
@@ -292,6 +317,8 @@ export function AppProvider({ children }) {
     addCourse,
     removeCourse,
     updateCourse,
+    addPastPaper,
+    removePastPaper,
     toggleTheme,
     startDemo,
     completeOnboarding,
@@ -316,6 +343,8 @@ export function AppProvider({ children }) {
     addCourse,
     removeCourse,
     updateCourse,
+    addPastPaper,
+    removePastPaper,
     toggleTheme,
     startDemo,
     completeOnboarding,

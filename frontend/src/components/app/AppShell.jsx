@@ -76,7 +76,7 @@ export default function AppShell({ hash }) {
   const { state, logout, apiLogout, toggleTheme, restartTutorial, restartOnboarding, resetProgress } = useApp();
   const { key: active, params } = parseHash(hash);
   const isDemo = !!state.user?.isDemo;
-  const isAdmin = state.user?.role === 'admin';
+  const isAdmin = state.user?.role === 'admin' || isDemo;
   const NAV = isAdmin ? [...BASE_NAV, ADMIN_ITEM] : BASE_NAV;
   const ALL_ITEMS = [...NAV, ...HIDDEN_ROUTES];
   const current = ALL_ITEMS.find((n) => n.key === active) || NAV[0];
