@@ -131,8 +131,24 @@ export default function Worksheets({ go }) {
     return (state.pastPapers || []).filter((p) => !p.board || p.board === track);
   }, [state.pastPapers, track]);
 
-  // Only subjects the user has actually chosen (from onboarding / courses)
+  // Only subjects the user has actually chosen (from onboarding / courses).
+  // Includes any subject on a custom course too, so custom subjects show up
+  // in the picker.
   const allTrackSubjects = SUBJECTS[track] || [];
+  const customSubjectTopics = useMemo(() => {
+    // Map<subject, topics[]> for custom courses.
+    const m = {};
+    (state.courses || []).forEach((c) => {
+      const subs = Array.isArray(c.subjects) ? c.subjects : [];
+      subs.forEach((s) => {
+        if (s && s.subject && Array.isArray(s.topics) && s.topics.length && !m[s.subject]) {
+          m[s.subject] = s.topics;
+        }
+      });
+    });
+    return m;
+  }, [state.courses]);
+
   const chosenSubjects = useMemo(() => {
     const fromUser = state.user?.subjects || [];
     const fromCourses = [];
@@ -140,9 +156,12 @@ export default function Worksheets({ go }) {
       const subs = Array.isArray(c.subjects) ? c.subjects.map((x) => x.subject) : [c.subject];
       subs.forEach((s) => { if (s && !fromCourses.includes(s)) fromCourses.push(s); });
     });
-    const merged = Array.from(new Set([...fromUser, ...fromCourses])).filter((s) => allTrackSubjects.includes(s));
+    // Standard-track subjects + any custom-course subjects (even if not on the track).
+    const merged = Array.from(new Set([...fromUser, ...fromCourses])).filter((s) => allTrackSubjects.includes(s) || customSubjectTopics[s]);
     return merged.length ? merged : allTrackSubjects;
-  }, [state.user?.subjects, state.courses, allTrackSubjects]);
+  }, [state.user?.subjects, state.courses, allTrackSubjects, customSubjectTopics]);
+
+  const topicsForSubject = (s) => (customSubjectTopics[s] || TOPICS[s] || []);
 
   const preselect = typeof window !== 'undefined' ? window.sessionStorage.getItem('preselect_subject') : null;
   const preselectTopic = typeof window !== 'undefined' ? window.sessionStorage.getItem('preselect_topic') : null;
@@ -151,7 +170,7 @@ export default function Worksheets({ go }) {
     if (preselect && chosenSubjects.includes(preselect)) return preselect;
     return chosenSubjects[0] || '';
   });
-  const topicsList = TOPICS[subject] || [];
+  const topicsList = topicsForSubject(subject);
   const [topics, setTopics] = useState(() => {
     if (preselectTopic && topicsList.includes(preselectTopic)) return [preselectTopic];
     return topicsList.length ? [topicsList[0]] : [];
@@ -172,8 +191,9 @@ export default function Worksheets({ go }) {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    const t = TOPICS[subject] || [];
+    const t = topicsForSubject(subject);
     setTopics(t.length ? [t[0]] : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject]);
 
   useEffect(() => {

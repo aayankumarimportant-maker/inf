@@ -15,8 +15,9 @@ function daysUntil(d) {
   return Math.max(0, Math.ceil((new Date(d + 'T00:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 }
 
-function TopicRow({ topic }) {
-  const summary = TOPIC_SUMMARY[topic] || 'Curated practice questions to build confidence in this topic.';
+function TopicRow({ topic, subjectEntry }) {
+  const overrideSummary = subjectEntry && subjectEntry.topicSummaries && subjectEntry.topicSummaries[topic];
+  const summary = overrideSummary || TOPIC_SUMMARY[topic] || 'Curated practice questions to build confidence in this topic.';
   return (
     <div className="flex items-start gap-3 rounded-lg border border-[color:var(--color-border)] bg-white p-3.5 hover:border-blue-300 hover:bg-blue-50/40 transition-colors">
       <span className="w-8 h-8 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
@@ -32,7 +33,9 @@ function TopicRow({ topic }) {
 
 function SubjectBlock({ s, onStudy }) {
   const info = SUBJECT_INFO[s.subject] || { emoji: '\u25A0' };
-  const topics = TOPICS[s.subject] || [];
+  // Custom courses can bring their own topics on the subject entry. Fall back
+  // to the built-in TOPICS map for standard subjects.
+  const topics = (Array.isArray(s.topics) && s.topics.length) ? s.topics : (TOPICS[s.subject] || []);
   const days = daysUntil(s.examDate);
   return (
     <div className="card-soft p-5">
@@ -64,7 +67,7 @@ function SubjectBlock({ s, onStudy }) {
         <div className="text-[12.5px] text-slate-500 italic">Topics for this subject will be added soon.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {topics.map((t) => <TopicRow key={t} topic={t} />)}
+          {topics.map((t) => <TopicRow key={t} topic={t} subjectEntry={s} />)}
         </div>
       )}
     </div>
@@ -89,8 +92,8 @@ export default function CourseOverview({ courseId, go }) {
     );
   }
 
-  const exam = EXAM_TRACKS.find((e) => e.id === course.exam) || { name: course.exam };
-  const totalTopics = course.subjects.reduce((acc, s) => acc + (TOPICS[s.subject]?.length || 0), 0);
+  const exam = EXAM_TRACKS.find((e) => e.id === course.exam) || { name: course.exam || 'Custom' };
+  const totalTopics = course.subjects.reduce((acc, s) => acc + ((Array.isArray(s.topics) && s.topics.length) ? s.topics.length : (TOPICS[s.subject]?.length || 0)), 0);
 
   const onStudy = (subject) => {
     window.location.hash = `#study?subject=${encodeURIComponent(subject)}`;

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Plus, GraduationCap, Trash2, CalendarClock, ArrowRight } from 'lucide-react';
+import { Plus, GraduationCap, Trash2, CalendarClock, ArrowRight, Sparkles } from 'lucide-react';
 import { EXAM_TRACKS, SUBJECT_INFO } from '../../data/mock';
 import { toast } from 'sonner';
 import CourseWizard from './CourseWizard';
+import CustomCourseWizard from './CustomCourseWizard';
 import EmptyStateScene from '../decor/EmptyStateScene';
 
 const STATUS = ['Active', 'On hold', 'Completed'];
@@ -80,7 +81,7 @@ function CourseCard({ course, onRemove, onUpdate }) {
   );
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ onAdd, onAddCustom }) {
   return (
     <div className="relative rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white overflow-hidden">
       <EmptyStateScene variant="book" className="absolute inset-0" />
@@ -89,10 +90,17 @@ function EmptyState({ onAdd }) {
           <GraduationCap className="w-6 h-6" />
         </div>
         <div className="text-[15.5px] font-semibold text-slate-900">No courses yet</div>
-        <p className="text-[13.5px] text-slate-500 mt-1 max-w-[420px] mx-auto">Add a course with multiple subjects — each with its own exam date.</p>
-        <button onClick={onAdd} className="btn-violet inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13.5px] font-medium mt-6">
-          <Plus className="w-4 h-4" /> Add your first course
-        </button>
+        <p className="text-[13.5px] text-slate-500 mt-1 max-w-[420px] mx-auto">Pick a syllabus (CBSE, IB, SAT…) or bring your own material to build a custom course.</p>
+        <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
+          <button onClick={onAdd} className="btn-violet inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13.5px] font-medium">
+            <Plus className="w-4 h-4" /> Add your first course
+          </button>
+          {onAddCustom && (
+            <button onClick={onAddCustom} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13.5px] font-semibold border border-blue-300 text-blue-800 bg-white hover:bg-blue-50">
+              <Sparkles className="w-4 h-4" /> + Custom Course
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -102,18 +110,24 @@ export default function MyCourses() {
   const { state, removeCourse, updateCourse } = useApp();
   const courses = state.courses || [];
   const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <p className="text-[14px] text-slate-500">Each course can contain multiple subjects, and every subject has its own exam date.</p>
-        <button onClick={() => setOpen(true)} className="btn-violet inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[14px] font-medium">
-          <Plus className="w-4 h-4" /> Add course
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCustomOpen(true)} data-testid="add-custom-course" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[14px] font-semibold border border-blue-300 text-blue-800 bg-white hover:bg-blue-50 transition-colors">
+            <Sparkles className="w-4 h-4" /> + Custom Course
+          </button>
+          <button onClick={() => setOpen(true)} className="btn-violet inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[14px] font-medium">
+            <Plus className="w-4 h-4" /> Add course
+          </button>
+        </div>
       </div>
 
       {courses.length === 0 ? (
-        <EmptyState onAdd={() => setOpen(true)} />
+        <EmptyState onAdd={() => setOpen(true)} onAddCustom={() => setCustomOpen(true)} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {courses.map((c) => (
@@ -123,6 +137,7 @@ export default function MyCourses() {
       )}
 
       {open && <CourseWizard mode="add-course" onClose={() => setOpen(false)} />}
+      {customOpen && <CustomCourseWizard onClose={() => setCustomOpen(false)} />}
     </div>
   );
 }
