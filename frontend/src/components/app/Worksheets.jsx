@@ -279,8 +279,11 @@ export default function Worksheets({ go }) {
   //   → / Enter / Space → next question (or submit on last)
   //   ← / Backspace → previous question
   // Ignored while typing in an input/textarea (Typed / Exam-style).
+  // Disabled entirely when the user turns off shortcuts in Settings.
+  const shortcutsEnabled = state.settings?.keyboardShortcuts !== false;
   useEffect(() => {
     if (stage !== 'take') return;
+    if (!shortcutsEnabled) return;
     const handler = (e) => {
       const target = e.target;
       const tag = (target && target.tagName) || '';
@@ -312,7 +315,7 @@ export default function Worksheets({ go }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, current, questions]);
+  }, [stage, current, questions, shortcutsEnabled]);
 
   /* ================== Take stage ================== */
   if (stage === 'take') {
@@ -359,9 +362,11 @@ export default function Worksheets({ go }) {
                   </button>
                 ))}
               </div>
-              <div className="text-[11.5px] text-slate-500 mt-3">
-                Tip: press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">A</kbd>–<kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">{String.fromCharCode(64 + Math.max(2, (q.options || []).length))}</kbd> on your keyboard to pick an answer, <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">→</kbd> to advance.
-              </div>
+              {shortcutsEnabled && (
+                <div className="text-[11.5px] text-slate-500 mt-3">
+                  Tip: press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">A</kbd>–<kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">{String.fromCharCode(64 + Math.max(2, (q.options || []).length))}</kbd> on your keyboard to pick an answer, <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10.5px] font-mono">→</kbd> to advance.
+                </div>
+              )}
             </>
           )}
 
