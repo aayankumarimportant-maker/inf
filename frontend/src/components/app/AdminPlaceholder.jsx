@@ -309,7 +309,7 @@ function CategoryPanel({ syllabus, subject, pastPapers, addPastPaper, removePast
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <div className="text-[12px] tracking-[0.16em] uppercase font-semibold text-blue-700">Past-paper library</div>
-            <div className="text-[12.5px] text-slate-500">{syllabus} · {subject} · {scopedPastPapers.length} total{filterTopic ? ` \u00b7 ${filteredPastPapers.length} shown` : ''}</div>
+            <div className="text-[12.5px] text-slate-500">{syllabus} · {subject} · {scopedPastPapers.length} total{filterTopic ? ` · ${filteredPastPapers.length} shown` : ''}</div>
           </div>
           <Filter className="w-4 h-4 text-slate-400" />
         </div>

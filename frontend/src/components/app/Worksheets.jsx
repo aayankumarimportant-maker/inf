@@ -356,7 +356,7 @@ export default function Worksheets({ go }) {
             <span>Question {current + 1} of {questions.length}{q._topic ? ` · ${q._topic}` : ''}</span>
             {q.source === 'past-paper' && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-semibold">
-                <FileText className="w-3 h-3" /> Past paper{q.year ? ` \u00b7 ${q.year}` : ''}
+                <FileText className="w-3 h-3" /> Past paper{q.year ? ` · ${q.year}` : ''}
               </span>
             )}
             {q.source === 'ai-generated' && (
@@ -555,7 +555,7 @@ export default function Worksheets({ go }) {
           <Segmented value={difficulty} onChange={setDifficulty} options={DIFFICULTIES} />
         </Field>
 
-        <Field label={`Duration \u00b7 ${fmtDuration(duration)}${isDurationDefault ? ' (real exam length)' : ''}`}>
+        <Field label={`Duration · ${fmtDuration(duration)}${isDurationDefault ? ' (real exam length)' : ''}`}>
           <div className="flex items-center gap-3">
             <input
               type="range"
