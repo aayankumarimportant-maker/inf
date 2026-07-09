@@ -59,7 +59,7 @@ function readPrefs() {
  * global overrides and the per-subject map. Handy for the Strengths page and
  * anything else that needs both.
  */
-function useSavedSwPrefs() {
+function useSavedSwPrefsInternal() {
   const [prefs, setPrefs] = useState(readPrefs);
   useEffect(() => {
     const handler = (e) => {
@@ -75,12 +75,16 @@ function useSavedSwPrefs() {
   return prefs;
 }
 
+// Public export — Strengths page & Performance page use this to read all
+// saved prefs at once and pick the right override slice per subject.
+export const useSavedSwPrefs = useSavedSwPrefsInternal;
+
 /**
  * Returns the GLOBAL overrides only. Used by Dashboard / Smart Recommendations
  * whose scope is the whole student profile, not a specific subject.
  */
 export function useSavedSwOverrides() {
-  return useSavedSwPrefs().globalOverrides;
+  return useSavedSwPrefsInternal().globalOverrides;
 }
 
 /**
@@ -89,7 +93,7 @@ export function useSavedSwOverrides() {
  * (per product spec). Pass `null` / `'all'` to get the global scope.
  */
 export function useSavedSwOverridesFor(subject) {
-  const prefs = useSavedSwPrefs();
+  const prefs = useSavedSwPrefsInternal();
   if (!subject || subject === 'all') return prefs.globalOverrides;
   return prefs.subjectOverrides?.[subject] || null;
 }
@@ -99,6 +103,54 @@ export function pickOverridesFor(prefs, subject) {
   if (!prefs) return null;
   if (!subject || subject === 'all') return prefs.globalOverrides;
   return prefs.subjectOverrides?.[subject] || null;
+}
+
+/**
+ * Pure computation of strengths/weaknesses stats for a set of worksheets.
+ * Extracted from {@link useStrengthsWeaknesses} so it can be called inside a
+ * useMemo for multiple subjects without violating the Rules of Hooks.
+ */
+export function computeSw(worksheets, overrides) {
+  const ws = worksheets || [];
+  const t = {};
+  ws.forEach((w) => {
+    if (!t[w.topic]) t[w.topic] = { correct: 0, total: 0, subject: w.subject };
+    t[w.topic].correct += w.correct;
+    t[w.topic].total += w.total;
+  });
+  const byTopic = Object.entries(t)
+    .map(([k, v]) => ({ topic: k, ...v, acc: v.total ? Math.round((v.correct / v.total) * 100) : 0 }))
+    .sort((a, b) => b.acc - a.acc);
+
+  const totalCorrect = byTopic.reduce((s, x) => s + x.correct, 0);
+  const totalQ = byTopic.reduce((s, x) => s + x.total, 0);
+  const avg = totalQ ? Math.round((totalCorrect / totalQ) * 100) : 0;
+  let adaptiveStrengthMin = clamp(Math.round(avg + 10), 60, 90);
+  let adaptiveWeaknessMax = clamp(Math.round(avg - 10), 20, 55);
+  if (adaptiveWeaknessMax >= adaptiveStrengthMin - 10) adaptiveWeaknessMax = adaptiveStrengthMin - 10;
+
+  const ov = overrides || {};
+  let strengthMin = ov.strengthMin != null ? Number(ov.strengthMin) : adaptiveStrengthMin;
+  let weaknessMax = ov.weaknessMax != null ? Number(ov.weaknessMax) : adaptiveWeaknessMax;
+  strengthMin = clamp(strengthMin, 10, 100);
+  weaknessMax = clamp(weaknessMax, 0, 90);
+  if (weaknessMax >= strengthMin - 5) weaknessMax = Math.max(0, strengthMin - 5);
+
+  const isCustom = strengthMin !== adaptiveStrengthMin || weaknessMax !== adaptiveWeaknessMax;
+  const strengths = byTopic.filter((x) => x.acc >= strengthMin);
+  const weaknesses = byTopic.filter((x) => x.acc < weaknessMax);
+
+  return {
+    byTopic,
+    avg,
+    adaptiveStrengthMin,
+    adaptiveWeaknessMax,
+    strengthMin,
+    weaknessMax,
+    isCustom,
+    strengths,
+    weaknesses,
+  };
 }
 
 /**
@@ -121,68 +173,7 @@ export function pickOverridesFor(prefs, subject) {
  * @param {{strengthMin?: number|null, weaknessMax?: number|null}} [overrides]
  */
 export function useStrengthsWeaknesses(worksheets, overrides) {
-  const ws = worksheets || [];
-
-  const byTopic = useMemo(() => {
-    const t = {};
-    ws.forEach((w) => {
-      if (!t[w.topic]) t[w.topic] = { correct: 0, total: 0, subject: w.subject };
-      t[w.topic].correct += w.correct;
-      t[w.topic].total += w.total;
-    });
-    return Object.entries(t)
-      .map(([k, v]) => ({ topic: k, ...v, acc: v.total ? Math.round((v.correct / v.total) * 100) : 0 }))
-      .sort((a, b) => b.acc - a.acc);
-  }, [ws]);
-
-  const adaptive = useMemo(() => {
-    const totalCorrect = byTopic.reduce((s, t) => s + t.correct, 0);
-    const totalQ = byTopic.reduce((s, t) => s + t.total, 0);
-    const avg = totalQ ? Math.round((totalCorrect / totalQ) * 100) : 0;
-    let strengthMin = clamp(Math.round(avg + 10), 60, 90);
-    let weaknessMax = clamp(Math.round(avg - 10), 20, 55);
-    if (weaknessMax >= strengthMin - 10) weaknessMax = strengthMin - 10;
-    return { avg, strengthMin, weaknessMax };
-  }, [byTopic]);
-
-  const effective = useMemo(() => {
-    const ov = overrides || {};
-    let strengthMin = ov.strengthMin != null ? Number(ov.strengthMin) : adaptive.strengthMin;
-    let weaknessMax = ov.weaknessMax != null ? Number(ov.weaknessMax) : adaptive.weaknessMax;
-    // Guardrails: keep sensible bounds & minimum 5-pt gap
-    strengthMin = clamp(strengthMin, 10, 100);
-    weaknessMax = clamp(weaknessMax, 0, 90);
-    if (weaknessMax >= strengthMin - 5) weaknessMax = Math.max(0, strengthMin - 5);
-    return { strengthMin, weaknessMax };
-  }, [adaptive, overrides]);
-
-  const isCustom = useMemo(() => {
-    return (
-      effective.strengthMin !== adaptive.strengthMin ||
-      effective.weaknessMax !== adaptive.weaknessMax
-    );
-  }, [effective, adaptive]);
-
-  const strengths = useMemo(
-    () => byTopic.filter((t) => t.acc >= effective.strengthMin),
-    [byTopic, effective.strengthMin]
-  );
-  const weaknesses = useMemo(
-    () => byTopic.filter((t) => t.acc < effective.weaknessMax),
-    [byTopic, effective.weaknessMax]
-  );
-
-  return {
-    byTopic,
-    avg: adaptive.avg,
-    adaptiveStrengthMin: adaptive.strengthMin,
-    adaptiveWeaknessMax: adaptive.weaknessMax,
-    strengthMin: effective.strengthMin,
-    weaknessMax: effective.weaknessMax,
-    isCustom,
-    strengths,
-    weaknesses,
-  };
+  return useMemo(() => computeSw(worksheets, overrides), [worksheets, overrides]);
 }
 
 export default useStrengthsWeaknesses;

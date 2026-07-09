@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SUBJECT_INFO } from '../../data/mock';
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react';
 import EmptyStateScene from '../decor/EmptyStateScene';
 import { predictedScore, predictedBreakdown, formatGrade, TONE_CLASSES, isGradedTrack } from '../../lib/predictedGrade';
-import { useStrengthsWeaknesses, useSavedSwOverridesFor } from '../../hooks/useStrengthsWeaknesses';
+import { useStrengthsWeaknesses, useSavedSwOverridesFor, useSavedSwPrefs, computeSw, pickOverridesFor } from '../../hooks/useStrengthsWeaknesses';
 
 const SUBJECT_COLORS = [
   '#2563eb', '#7c3aed', '#dc2626', '#10b981',
@@ -25,8 +25,13 @@ export default function ProgressView() {
   const allSubjects = useMemo(() => Array.from(new Set(ws.map((w) => w.subject))), [ws]);
   const [hidden, setHidden] = useState({});
   const [hoveredSubject, setHoveredSubject] = useState(null);
+  const [focusedSubject, setFocusedSubject] = useState(null); // set briefly on click for a flash-highlight
+  const cardsSectionRef = useRef(null);
   const isHidden = (s) => hidden[s] === true;
   const visibleSubjects = allSubjects.filter((s) => !isHidden(s));
+
+  // Full prefs (both global and per-subject overrides).
+  const swPrefs = useSavedSwPrefs();
 
   // Chronological order (oldest first)
   const chronological = useMemo(() => [...ws].slice().reverse(), [ws]);
@@ -41,7 +46,7 @@ export default function ProgressView() {
     visibleSubjects.forEach((s) => { m[s] = []; });
     chronological.forEach((w, i) => {
       if (!visibleSubjects.includes(w.subject)) return;
-      m[w.subject].push({ x: i, score: w.score, date: w.date, topic: w.topic });
+      m[w.subject].push({ x: i, score: w.score, date: w.date, topic: w.topic, difficulty: w.difficulty });
     });
     return m;
   }, [chronological, visibleSubjects]);
@@ -58,18 +63,54 @@ export default function ProgressView() {
     return out;
   }, [series]);
 
-  // Per-subject predicted grade (difficulty-adjusted, heavily latest-biased).
-  // The predicted grade is intentionally NOT computed at the overall level —
-  // per product requirement it must be per-subject only.
+  // Per-subject rich detail: predicted breakdown, latest / best scores, and
+  // strengths / weaknesses (computed with per-subject overrides, independent
+  // from global). Centralized so LineChart, hover cards, and subject cards
+  // all read the same data.
+  const subjectDetails = useMemo(() => {
+    const map = {};
+    allSubjects.forEach((s) => {
+      const list = ws.filter((w) => w.subject === s);
+      if (list.length === 0) {
+        map[s] = null; return;
+      }
+      const bd = predictedBreakdown(list);
+      const grade = formatGrade(bd.score, examTrack);
+      // Best (max score) and latest (most recent) worksheet.
+      const best = list.reduce((m, w) => (w.score > m.score ? w : m), list[0]);
+      const latest = [...list].sort((a, b) => {
+        const ta = a.date ? new Date(a.date).getTime() : 0;
+        const tb = b.date ? new Date(b.date).getTime() : 0;
+        return tb - ta;
+      })[0];
+      const sw = computeSw(list, pickOverridesFor(swPrefs, s));
+      map[s] = { bd, grade, best, latest, sw, count: list.length };
+    });
+    return map;
+  }, [ws, allSubjects, examTrack, swPrefs]);
+
+  // Convenience: predictedBySubject (subset of subjectDetails filtered to visible)
   const predictedBySubject = useMemo(() => {
     const map = {};
     visibleSubjects.forEach((s) => {
-      const list = visibleWS.filter((w) => w.subject === s);
-      const score = predictedFromList(list);
-      map[s] = { predicted: score, count: list.length, grade: formatGrade(score, examTrack) };
+      const d = subjectDetails[s];
+      map[s] = d
+        ? { predicted: d.bd.score, count: d.count, grade: d.grade }
+        : { predicted: 0, count: 0, grade: formatGrade(0, examTrack) };
     });
     return map;
-  }, [visibleWS, visibleSubjects, examTrack]);
+  }, [visibleSubjects, subjectDetails, examTrack]);
+
+  // Click a subject line/label → scroll to the cards section and briefly
+  // highlight the matching subject card.
+  const scrollToSubject = useCallback((s) => {
+    if (cardsSectionRef.current) {
+      cardsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setFocusedSubject(s);
+    // Clear the focus ring after ~2.5s
+    setTimeout(() => setFocusedSubject((cur) => (cur === s ? null : cur)), 2500);
+  }, []);
 
   if (ws.length === 0) {
     return (
@@ -161,13 +202,15 @@ export default function ProgressView() {
           subjects={visibleSubjects}
           allSubjects={allSubjects}
           predictedBySubject={predictedBySubject}
+          subjectDetails={subjectDetails}
           hoveredSubject={hoveredSubject}
           onHoverSubject={setHoveredSubject}
+          onSubjectClick={scrollToSubject}
           examTrack={examTrack}
         />
       </div>
 
-      <div className="rounded-2xl border border-[color:var(--color-border)] p-5 bg-white">
+      <div ref={cardsSectionRef} className="rounded-2xl border border-[color:var(--color-border)] p-5 bg-white">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <div className="eyebrow-muted">Predicted grade per subject</div>
@@ -198,6 +241,7 @@ export default function ProgressView() {
                 isHovered={hoveredSubject === s}
                 dimmed={!!hoveredSubject && hoveredSubject !== s}
                 onHover={setHoveredSubject}
+                isFocused={focusedSubject === s}
               />
             ))}
           </div>
