@@ -28,7 +28,7 @@ const BASE_NAV = [
   { key: 'study', label: 'Start Studying', Icon: Pencil },
   { key: 'qbank', label: 'Question Bank', Icon: Library },
   { key: 'history', label: 'Worksheet History', Icon: History },
-  { key: 'progress', label: 'Progress', Icon: TrendingUp },
+  { key: 'progress', label: 'Performance', Icon: TrendingUp },
   { key: 'strengths', label: 'Strengths & Weaknesses', Icon: Dumbbell },
   { key: 'recommendations', label: 'Smart Recommendations', Icon: Sparkles },
   { key: 'profile', label: 'Profile', Icon: User },

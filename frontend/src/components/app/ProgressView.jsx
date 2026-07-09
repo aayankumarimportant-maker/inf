@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { SUBJECT_INFO } from '../../data/mock';
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react';
 import EmptyStateScene from '../decor/EmptyStateScene';
-import { predictedScore, formatGrade, TONE_CLASSES, isGradedTrack } from '../../lib/predictedGrade';
+import { predictedScore, predictedBreakdown, formatGrade, TONE_CLASSES, isGradedTrack } from '../../lib/predictedGrade';
 import { useStrengthsWeaknesses, useSavedSwOverridesFor } from '../../hooks/useStrengthsWeaknesses';
 
 const SUBJECT_COLORS = [
@@ -24,6 +24,7 @@ export default function ProgressView() {
 
   const allSubjects = useMemo(() => Array.from(new Set(ws.map((w) => w.subject))), [ws]);
   const [hidden, setHidden] = useState({});
+  const [hoveredSubject, setHoveredSubject] = useState(null);
   const isHidden = (s) => hidden[s] === true;
   const visibleSubjects = allSubjects.filter((s) => !isHidden(s));
 
@@ -94,7 +95,10 @@ export default function ProgressView() {
         <div className="flex items-center justify-between gap-3 mb-4">
           <div>
             <div className="eyebrow-muted">Score trend over time</div>
-            <div className="text-[12px] text-slate-500 mt-1">A line per subject. Tap a chip to show or hide it.</div>
+            <div className="text-[12px] text-slate-500 mt-1">
+              Solid line = your worksheet performance. Dashed line = predicted grade.
+              Hover a subject to focus on it.
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setHidden({})} className="text-[12px] text-blue-700 hover:text-blue-900 transition-colors">Show all</button>
@@ -102,15 +106,30 @@ export default function ProgressView() {
             <button onClick={() => { const m = {}; allSubjects.forEach((s) => { m[s] = true; }); setHidden(m); }} className="text-[12px] text-slate-500 hover:text-slate-800 transition-colors">Hide all</button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-3">
           {allSubjects.map((s, i) => {
             const color = SUBJECT_COLORS[i % SUBJECT_COLORS.length];
             const off = isHidden(s);
             const info = SUBJECT_INFO[s] || { emoji: '\u25A0' };
             const d = deltas[s] || {};
+            const isHovered = hoveredSubject === s;
+            const dimmed = !!hoveredSubject && !isHovered && !off;
             return (
-              <button key={s} onClick={() => setHidden((a) => ({ ...a, [s]: !a[s] }))}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12.5px] font-medium border transition-colors ${off ? 'bg-slate-50 text-slate-400 border-[color:var(--color-border)]' : 'bg-white text-slate-800 border-[color:var(--color-border)] hover:bg-slate-100'}`}>
+              <button
+                key={s}
+                onClick={() => setHidden((a) => ({ ...a, [s]: !a[s] }))}
+                onMouseEnter={() => !off && setHoveredSubject(s)}
+                onMouseLeave={() => setHoveredSubject(null)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12.5px] font-medium border transition-all ${
+                  off
+                    ? 'bg-slate-50 text-slate-400 border-[color:var(--color-border)]'
+                    : isHovered
+                      ? 'bg-white text-slate-900 border-slate-400 ring-2 ring-blue-100'
+                      : dimmed
+                        ? 'bg-white/60 text-slate-400 border-[color:var(--color-border)] opacity-60'
+                        : 'bg-white text-slate-800 border-[color:var(--color-border)] hover:bg-slate-100'
+                }`}
+              >
                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: off ? '#cbd5e1' : color }} />
                 <span className="text-[14px] leading-none">{info.emoji}</span>
                 <span className={off ? 'line-through' : ''}>{s}</span>
@@ -120,7 +139,32 @@ export default function ProgressView() {
           })}
         </div>
 
-        <LineChart series={series} subjects={visibleSubjects} allSubjects={allSubjects} predictedBySubject={predictedBySubject} />
+        {/* Line-style legend */}
+        <div className="flex flex-wrap items-center gap-4 mb-3 text-[11.5px] text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="26" height="8" viewBox="0 0 26 8" aria-hidden>
+              <line x1="1" y1="4" x2="25" y2="4" stroke="#334155" strokeWidth="2.4" strokeLinecap="round" />
+            </svg>
+            Worksheet performance
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="26" height="8" viewBox="0 0 26 8" aria-hidden>
+              <line x1="1" y1="4" x2="25" y2="4" stroke="#334155" strokeWidth="1.6" strokeDasharray="4 3" />
+              <circle cx="23" cy="4" r="2.6" fill="white" stroke="#334155" strokeWidth="1.6" />
+            </svg>
+            Predicted grade
+          </span>
+        </div>
+
+        <LineChart
+          series={series}
+          subjects={visibleSubjects}
+          allSubjects={allSubjects}
+          predictedBySubject={predictedBySubject}
+          hoveredSubject={hoveredSubject}
+          onHoverSubject={setHoveredSubject}
+          examTrack={examTrack}
+        />
       </div>
 
       <div className="rounded-2xl border border-[color:var(--color-border)] p-5 bg-white">
@@ -131,6 +175,9 @@ export default function ProgressView() {
               {isGradedTrack(examTrack)
                 ? `${(examTrack || '').toUpperCase()}-style grade, heavily biased toward your most recent worksheet and adjusted for its difficulty.`
                 : 'Heavily biased toward your most recent worksheet and adjusted for its difficulty.'}
+              <span className="ml-1 text-emerald-700">
+                An extra upward nudge is applied when you&rsquo;re improving.
+              </span>
             </div>
           </div>
           <Sparkles className="w-4 h-4 text-blue-600" />
@@ -148,6 +195,9 @@ export default function ProgressView() {
                 p={predictedBySubject[s] || { predicted: 0, count: 0, grade: null }}
                 d={deltas[s] || {}}
                 ws={ws}
+                isHovered={hoveredSubject === s}
+                dimmed={!!hoveredSubject && hoveredSubject !== s}
+                onHover={setHoveredSubject}
               />
             ))}
           </div>
@@ -157,18 +207,43 @@ export default function ProgressView() {
   );
 }
 
-// Row rendering a single subject's predicted grade + progress bar + S/W counts.
-// Split out so we can call the useStrengthsWeaknesses hook per subject (hooks
-// can't be conditional).
-function SubjectPredictedRow({ s, color, info, p, d, ws }) {
+// Row rendering a single subject's predicted grade + progress bar + S/W counts
+// and richer stats (best, latest, improvement bonus). Split out so we can
+// call the useStrengthsWeaknesses hook per subject (hooks can't be conditional).
+function SubjectPredictedRow({ s, color, info, p, d, ws, isHovered, dimmed, onHover }) {
   const subjectWs = useMemo(() => ws.filter((w) => w.subject === s), [ws, s]);
-  // Independent per-subject overrides — no fallback to global.
   const subjOverrides = useSavedSwOverridesFor(s);
   const { strengths, weaknesses, strengthMin, weaknessMax, isCustom } = useStrengthsWeaknesses(subjectWs, subjOverrides);
+
+  // Extra stats: best score, latest score/topic/date, improvement bonus.
+  const stats = useMemo(() => {
+    if (subjectWs.length === 0) return null;
+    const best = subjectWs.reduce((m, w) => (w.score > m.score ? w : m), subjectWs[0]);
+    const sortedByDate = [...subjectWs].sort((a, b) => {
+      const ta = a.date ? new Date(a.date).getTime() : 0;
+      const tb = b.date ? new Date(b.date).getTime() : 0;
+      return tb - ta;
+    });
+    const latest = sortedByDate[0];
+    const bd = predictedBreakdown(subjectWs);
+    return { best, latest, bd };
+  }, [subjectWs]);
+
   const noPred = p.count === 0;
   const tone = TONE_CLASSES[p.grade?.tone] || TONE_CLASSES.ok;
+
   return (
-    <div className="rounded-xl border border-[color:var(--color-border)] px-4 py-3">
+    <div
+      className={`rounded-xl border px-4 py-3 transition-all cursor-default ${
+        isHovered
+          ? `${tone.border} ring-2 ring-blue-100 bg-white`
+          : dimmed
+            ? 'border-[color:var(--color-border)] bg-white opacity-60'
+            : 'border-[color:var(--color-border)] bg-white'
+      }`}
+      onMouseEnter={() => onHover && onHover(s)}
+      onMouseLeave={() => onHover && onHover(null)}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
@@ -182,7 +257,7 @@ function SubjectPredictedRow({ s, color, info, p, d, ws }) {
               {p.grade?.sub || 'Predicted'}
             </div>
             <div className={`text-[18px] font-semibold ${tone.text} tabular-nums leading-tight`}>
-              {noPred ? '—' : (p.grade?.label ?? `${p.predicted}%`)}
+              {noPred ? '\u2014' : (p.grade?.label ?? `${p.predicted}%`)}
             </div>
           </div>
           {d.hasEnough ? <DeltaPill delta={d.delta} /> : <span className="text-[11.5px] text-slate-400">2+ needed</span>}
@@ -193,31 +268,55 @@ function SubjectPredictedRow({ s, color, info, p, d, ws }) {
           <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${p.predicted}%`, background: color }} />
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-500">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
-              <span className="tabular-nums font-medium text-slate-700">{strengths.length}</span> strength{strengths.length === 1 ? '' : 's'}
-              <span className="text-slate-400">(≥ {strengthMin}%)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-              <span className="tabular-nums font-medium text-slate-700">{weaknesses.length}</span> weakness{weaknesses.length === 1 ? '' : 'es'}
-              <span className="text-slate-400">(&lt; {weaknessMax}%)</span>
-            </span>
-            {isCustom && (
-              <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-medium">
-                Custom for {s}
-              </span>
+
+          {/* Rich stats row — visible always, extra hint when improvement bonus applied. */}
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-[11.5px] text-slate-600">
+            {stats?.latest && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Latest</div>
+                <div className="tabular-nums font-medium text-slate-800">{stats.latest.score}%</div>
+                <div className="text-slate-400 truncate">{stats.latest.topic}</div>
+              </div>
             )}
+            {stats?.best && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Best</div>
+                <div className="tabular-nums font-medium text-slate-800">{stats.best.score}%</div>
+                <div className="text-slate-400 truncate">{stats.best.topic}</div>
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Base</div>
+              <div className="tabular-nums font-medium text-slate-800">{stats?.bd.baseScore ?? 0}%</div>
+              {stats?.bd.hasImprovement ? (
+                <div className="text-emerald-600 tabular-nums font-medium">+{stats.bd.improvementBonus} improvement</div>
+              ) : (
+                <div className="text-slate-400">no bonus</div>
+              )}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Topics</div>
+              <div className="text-slate-800">
+                <span className="tabular-nums font-medium text-blue-700">{strengths.length}</span> strong
+                <span className="text-slate-400 mx-1">·</span>
+                <span className="tabular-nums font-medium text-rose-600">{weaknesses.length}</span> weak
+              </div>
+              <div className="text-slate-400 tabular-nums">≥ {strengthMin}% / &lt; {weaknessMax}%</div>
+            </div>
           </div>
+          {isCustom && (
+            <div className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-medium">
+              Custom thresholds for {s}
+            </div>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function LineChart({ series, subjects, allSubjects, predictedBySubject }) {
-  const w = 760, h = 280, padL = 36, padR = 16, padT = 16, padB = 30;
+function LineChart({ series, subjects, allSubjects, predictedBySubject, hoveredSubject, onHoverSubject, examTrack }) {
+  const w = 780, h = 300, padL = 36, padR = 90, padT = 16, padB = 30; // extra right padding for end-labels
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
 
@@ -234,9 +333,12 @@ function LineChart({ series, subjects, allSubjects, predictedBySubject }) {
   const xFor = (i) => padL + (i / denom) * innerW;
   const yFor = (v) => padT + innerH - (v / 100) * innerH;
 
+  const dimOthers = !!hoveredSubject;
+  const opacityFor = (s) => (dimOthers && s !== hoveredSubject) ? 0.15 : 1;
+
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto min-w-[640px]">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto min-w-[640px]" onMouseLeave={() => onHoverSubject && onHoverSubject(null)}>
         {[0, 25, 50, 75, 100].map((g) => {
           const y = yFor(g);
           return (
@@ -258,19 +360,27 @@ function LineChart({ series, subjects, allSubjects, predictedBySubject }) {
           if (pts.length === 0) return null;
           const color = SUBJECT_COLORS[allSubjects.indexOf(s) % SUBJECT_COLORS.length];
           const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p.score).toFixed(1)}`).join(' ');
+          const op = opacityFor(s);
           return (
-            <g key={s}>
+            <g
+              key={s}
+              style={{ opacity: op, transition: 'opacity 160ms ease' }}
+              onMouseEnter={() => onHoverSubject && onHoverSubject(s)}
+              className="cursor-pointer"
+            >
+              {/* Invisible thick hit-target for easier hover */}
+              <path d={path} fill="none" stroke="transparent" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
               <path d={path} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
               {pts.map((p, i) => (
-                <circle key={`${s}-${i}`} cx={xFor(i)} cy={yFor(p.score)} r="3.4" fill={color}>
-                  <title>{`${s} ${p.score}% (${p.topic})`}</title>
+                <circle key={`${s}-${i}`} cx={xFor(i)} cy={yFor(p.score)} r="3.6" fill={color}>
+                  <title>{`${s} · ${p.topic} · ${p.score}%`}</title>
                 </circle>
               ))}
             </g>
           );
         })}
 
-        {/* Per-subject predicted end-of-line markers on the right edge */}
+        {/* Per-subject predicted end markers + end-of-line labels */}
         {subjects.map((s) => {
           const pts = series[s] || [];
           if (pts.length === 0) return null;
@@ -278,14 +388,27 @@ function LineChart({ series, subjects, allSubjects, predictedBySubject }) {
           if (!p || p.count === 0) return null;
           const color = SUBJECT_COLORS[allSubjects.indexOf(s) % SUBJECT_COLORS.length];
           const lastX = xFor(pts.length - 1);
-          const predX = w - padR - 4;
+          const predX = w - padR + 6;
           const predY = yFor(p.predicted);
+          const op = opacityFor(s);
+          const gradeLabel = p.grade?.label ?? `${p.predicted}%`;
           return (
-            <g key={`pred-${s}`}>
+            <g
+              key={`pred-${s}`}
+              style={{ opacity: op, transition: 'opacity 160ms ease' }}
+              onMouseEnter={() => onHoverSubject && onHoverSubject(s)}
+            >
               {/* dashed connector from the last real point to the predicted marker */}
-              <line x1={lastX} y1={yFor(pts[pts.length - 1].score)} x2={predX - 6} y2={predY} stroke={color} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.7" />
-              <circle cx={predX - 6} cy={predY} r="4.2" fill="white" stroke={color} strokeWidth="2" />
-              <title>{`${s} predicted ${p.grade?.label ?? `${p.predicted}%`}`}</title>
+              <line x1={lastX} y1={yFor(pts[pts.length - 1].score)} x2={predX} y2={predY} stroke={color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.85" />
+              <circle cx={predX} cy={predY} r="4.6" fill="white" stroke={color} strokeWidth="2.2" />
+              {/* End-of-line label: subject + grade */}
+              <text x={predX + 8} y={predY - 2} fontSize="10" fontWeight="700" fill={color}>
+                {gradeLabel}
+              </text>
+              <text x={predX + 8} y={predY + 10} fontSize="8.5" fill="#64748b">
+                {s.length > 12 ? s.slice(0, 12) + '\u2026' : s}
+              </text>
+              <title>{`${s} predicted ${gradeLabel} (${(examTrack || '').toUpperCase()})`}</title>
             </g>
           );
         })}

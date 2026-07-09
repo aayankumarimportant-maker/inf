@@ -32,6 +32,13 @@ export const DIFF_ADJUST = {
 // each step back. 0.5 → latest ≈ 50%, prev ≈ 25%, ...
 export const RECENCY_DECAY = 0.5;
 
+// Improvement bias — when the latest attempt's *adjusted* score beats the
+// weighted historical baseline the prediction gets a modest upward nudge.
+// The bias is intentionally one-way (never dampens) because it models
+// "student is trending up → give them the benefit of the doubt".
+export const IMPROVEMENT_BONUS_CAP = 8;   // never more than +8 pts
+export const IMPROVEMENT_BONUS_RATE = 0.4; // 40% of (latest - baseline)
+
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 /**
@@ -43,7 +50,17 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
  * @returns {number} 0-100, or 0 when list is empty
  */
 export function predictedScore(worksheets) {
-  if (!worksheets || worksheets.length === 0) return 0;
+  return predictedBreakdown(worksheets).score;
+}
+
+/**
+ * Same computation as {@link predictedScore} but exposes each step so the UI
+ * can explain how the number was arrived at (base weighted score, whether an
+ * improvement bonus was applied, etc.).
+ */
+export function predictedBreakdown(worksheets) {
+  const empty = { score: 0, baseScore: 0, improvementBonus: 0, latestAdj: 0, hasImprovement: false, count: 0 };
+  if (!worksheets || worksheets.length === 0) return empty;
 
   // Sort by date desc (newest first). Fall back to insertion order if no date.
   const sorted = [...worksheets].sort((a, b) => {
@@ -54,18 +71,37 @@ export function predictedScore(worksheets) {
 
   let num = 0;
   let den = 0;
+  let latestAdj = 0;
   sorted.forEach((w, i) => {
     const raw = typeof w.score === 'number'
       ? w.score
       : (w.total ? (w.correct / w.total) * 100 : 0);
     const adj = clamp(raw * (DIFF_ADJUST[w.difficulty] ?? DIFF_ADJUST.Medium), 0, 100);
+    if (i === 0) latestAdj = adj;
     const weight = Math.pow(RECENCY_DECAY, i);
     num += adj * weight;
     den += weight;
   });
 
-  if (den === 0) return 0;
-  return Math.round(num / den);
+  const baseScore = den === 0 ? 0 : num / den;
+
+  // Improvement bonus: only when the latest attempt beats the baseline.
+  // (The base already gives the latest attempt ~50% of the weight, so this is
+  //  an additional, capped nudge on top.)
+  const gap = latestAdj - baseScore;
+  const improvementBonus = gap > 0
+    ? Math.min(IMPROVEMENT_BONUS_CAP, gap * IMPROVEMENT_BONUS_RATE)
+    : 0;
+
+  const score = clamp(Math.round(baseScore + improvementBonus), 0, 100);
+  return {
+    score,
+    baseScore: Math.round(baseScore),
+    improvementBonus: Math.round(improvementBonus * 10) / 10,
+    latestAdj: Math.round(latestAdj),
+    hasImprovement: improvementBonus > 0,
+    count: sorted.length,
+  };
 }
 
 // -----------------------------------------------------------------------------
