@@ -4,7 +4,7 @@ import { SUBJECT_INFO } from '../../data/mock';
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react';
 import EmptyStateScene from '../decor/EmptyStateScene';
 import { predictedScore, formatGrade, TONE_CLASSES, isGradedTrack } from '../../lib/predictedGrade';
-import { useStrengthsWeaknesses, useSavedSwOverrides } from '../../hooks/useStrengthsWeaknesses';
+import { useStrengthsWeaknesses, useSavedSwOverridesFor } from '../../hooks/useStrengthsWeaknesses';
 
 const SUBJECT_COLORS = [
   '#2563eb', '#7c3aed', '#dc2626', '#10b981',
@@ -21,7 +21,6 @@ export default function ProgressView() {
   const { state } = useApp();
   const ws = state.worksheets || [];
   const examTrack = state.user?.examTrack || 'CBSE';
-  const swOverrides = useSavedSwOverrides();
 
   const allSubjects = useMemo(() => Array.from(new Set(ws.map((w) => w.subject))), [ws]);
   const [hidden, setHidden] = useState({});
@@ -149,7 +148,6 @@ export default function ProgressView() {
                 p={predictedBySubject[s] || { predicted: 0, count: 0, grade: null }}
                 d={deltas[s] || {}}
                 ws={ws}
-                swOverrides={swOverrides}
               />
             ))}
           </div>
@@ -162,9 +160,11 @@ export default function ProgressView() {
 // Row rendering a single subject's predicted grade + progress bar + S/W counts.
 // Split out so we can call the useStrengthsWeaknesses hook per subject (hooks
 // can't be conditional).
-function SubjectPredictedRow({ s, color, info, p, d, ws, swOverrides }) {
+function SubjectPredictedRow({ s, color, info, p, d, ws }) {
   const subjectWs = useMemo(() => ws.filter((w) => w.subject === s), [ws, s]);
-  const { strengths, weaknesses, strengthMin, weaknessMax } = useStrengthsWeaknesses(subjectWs, swOverrides);
+  // Independent per-subject overrides — no fallback to global.
+  const subjOverrides = useSavedSwOverridesFor(s);
+  const { strengths, weaknesses, strengthMin, weaknessMax, isCustom } = useStrengthsWeaknesses(subjectWs, subjOverrides);
   const noPred = p.count === 0;
   const tone = TONE_CLASSES[p.grade?.tone] || TONE_CLASSES.ok;
   return (
@@ -204,6 +204,11 @@ function SubjectPredictedRow({ s, color, info, p, d, ws, swOverrides }) {
               <span className="tabular-nums font-medium text-slate-700">{weaknesses.length}</span> weakness{weaknesses.length === 1 ? '' : 'es'}
               <span className="text-slate-400">(&lt; {weaknessMax}%)</span>
             </span>
+            {isCustom && (
+              <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-medium">
+                Custom for {s}
+              </span>
+            )}
           </div>
         </>
       )}

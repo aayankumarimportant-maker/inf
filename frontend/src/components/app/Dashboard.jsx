@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CalendarClock, Sparkles } from 'lucide-react';
 import { useStrengthsWeaknesses, useSavedSwOverrides } from '../../hooks/useStrengthsWeaknesses';
+import { predictedScore, formatGrade, scoreToIBGrade, TONE_CLASSES, isGradedTrack } from '../../lib/predictedGrade';
 
 function Ring({ value = 0 }) {
   const r = 32;
@@ -67,6 +68,35 @@ export default function Dashboard({ go }) {
 
   const strongTopics = useMemo(() => swStrengths.slice(0, 3), [swStrengths]);
   const weakTopics = useMemo(() => swWeaknesses.slice(0, 3), [swWeaknesses]);
+
+  // ---------------------------------------------------------------------------
+  // Per-subject predicted grade + optional IB total.
+  // ---------------------------------------------------------------------------
+  const examTrack = state.user?.examTrack || 'CBSE';
+  const isIB = (examTrack || '').toUpperCase() === 'IB';
+  const perSubjectGrades = useMemo(() => {
+    const subjects = Array.from(new Set(ws.map((w) => w.subject))).sort();
+    return subjects.map((s) => {
+      const list = ws.filter((w) => w.subject === s);
+      const score = predictedScore(list);
+      return {
+        subject: s,
+        score,
+        count: list.length,
+        grade: formatGrade(score, examTrack),
+        ibGrade: scoreToIBGrade(score), // handy for the IB total
+      };
+    });
+  }, [ws, examTrack]);
+
+  // IB total: sum of per-subject IB grades (out of subjectCount × 7).
+  // Only shown when the student is on the IB track — CBSE/ICSE stay per-subject.
+  const ibTotal = useMemo(() => {
+    if (!isIB || perSubjectGrades.length === 0) return null;
+    const sum = perSubjectGrades.reduce((acc, g) => acc + g.ibGrade, 0);
+    const max = perSubjectGrades.length * 7;
+    return { sum, max, subjects: perSubjectGrades.length };
+  }, [isIB, perSubjectGrades]);
 
   const goalDate = new Date().toDateString();
   const questionsToday = state.goalDate === goalDate ? state.questionsToday : 0;
@@ -143,6 +173,38 @@ export default function Dashboard({ go }) {
         </div>
       </div>
 
+      {perSubjectGrades.length > 0 && (
+        <div className="rounded-xl border border-[color:var(--color-border)] bg-white p-5" data-testid="dashboard-predicted-grades">
+          <div className="flex items-center justify-between mb-3 gap-3">
+            <div>
+              <div className="eyebrow-muted flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                Predicted grades
+              </div>
+              <div className="text-[12px] text-slate-500 mt-0.5">
+                {isGradedTrack(examTrack)
+                  ? `${examTrack.toUpperCase()}-style, per subject. Difficulty-weighted and heavily biased toward your most recent worksheet.`
+                  : 'Per subject. Difficulty-weighted and heavily biased toward your most recent worksheet.'}
+              </div>
+            </div>
+            {ibTotal && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-right shrink-0" data-testid="ib-total">
+                <div className="text-[10px] tracking-[0.14em] uppercase font-semibold text-emerald-700">IB total</div>
+                <div className="text-[18px] font-semibold text-emerald-800 tabular-nums leading-tight">
+                  {ibTotal.sum}<span className="text-slate-500 font-normal">/{ibTotal.max}</span>
+                </div>
+                <div className="text-[10.5px] text-slate-500">{ibTotal.subjects} {ibTotal.subjects === 1 ? 'subject' : 'subjects'}</div>
+              </div>
+            )}
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {perSubjectGrades.map((g) => (
+              <PredictedGradeMini key={g.subject} g={g} onClick={() => go('progress')} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="rounded-xl border border-zinc-200 p-5">
           <div className="flex items-center justify-between mb-3">
@@ -201,5 +263,33 @@ export default function Dashboard({ go }) {
         <button onClick={() => go('study')} className="btn-outline-dark px-5 py-2.5 rounded-lg text-[14px] font-medium">Browse subjects</button>
       </div>
     </div>
+  );
+}
+
+
+function PredictedGradeMini({ g, onClick }) {
+  const tone = TONE_CLASSES[g.grade?.tone] || TONE_CLASSES.ok;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-lg border ${tone.border} ${tone.bg} p-3 hover:brightness-95 transition group`}
+      data-testid={`pred-grade-${g.subject}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold text-slate-900 truncate">{g.subject}</div>
+          <div className="text-[10.5px] text-slate-500 tabular-nums">
+            {g.count} {g.count === 1 ? 'worksheet' : 'worksheets'}
+          </div>
+        </div>
+        <div className={`text-[20px] font-bold ${tone.text} tabular-nums leading-none`}>
+          {g.grade?.label ?? '\u2014'}
+        </div>
+      </div>
+      <div className="mt-2 h-1.5 rounded-full bg-white/60 overflow-hidden">
+        <div className={`h-full ${tone.dot}`} style={{ width: `${g.score}%` }} />
+      </div>
+    </button>
   );
 }

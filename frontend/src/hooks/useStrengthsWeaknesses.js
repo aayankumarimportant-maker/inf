@@ -7,41 +7,98 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const PREFS_KEY = 'infinitysheets_sw_prefs_v1';
 
 /**
- * Read the user's saved threshold overrides (set on the Strengths page) so
- * that Dashboard / Smart Recommendations reflect the same classification the
- * student is using. Listens to `storage` events so changes made in another
- * tab (or by the Strengths page after the current page has mounted) show up.
+ * Migrate any older payload shape to the new one so returning users don't lose
+ * their customization. Old shape stored `overrides` at the top level (applied
+ * globally). New shape splits into `globalOverrides` (used when the "All
+ * subjects" view is active) and `subjectOverrides` (per-subject, independent).
  */
-export function useSavedSwOverrides() {
-  const read = () => {
-    try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
-      if (!raw) return null;
-      const p = JSON.parse(raw);
-      if (!p || !p.overrides) return null;
-      const ov = p.overrides;
-      return {
-        strengthMin: ov.strengthMin != null ? Number(ov.strengthMin) : null,
-        weaknessMax: ov.weaknessMax != null ? Number(ov.weaknessMax) : null,
-      };
-    } catch (_e) {
-      return null;
-    }
+function normalizePrefs(raw) {
+  if (!raw) return { globalOverrides: null, subjectOverrides: {} };
+  const p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const out = {
+    globalOverrides: null,
+    subjectOverrides: {},
   };
-  const [overrides, setOverrides] = useState(read);
+  if (p.globalOverrides && typeof p.globalOverrides === 'object') {
+    out.globalOverrides = {
+      strengthMin: p.globalOverrides.strengthMin != null ? Number(p.globalOverrides.strengthMin) : null,
+      weaknessMax: p.globalOverrides.weaknessMax != null ? Number(p.globalOverrides.weaknessMax) : null,
+    };
+  } else if (p.overrides && typeof p.overrides === 'object') {
+    // Legacy: single `overrides` object → treat as global.
+    out.globalOverrides = {
+      strengthMin: p.overrides.strengthMin != null ? Number(p.overrides.strengthMin) : null,
+      weaknessMax: p.overrides.weaknessMax != null ? Number(p.overrides.weaknessMax) : null,
+    };
+  }
+  if (p.subjectOverrides && typeof p.subjectOverrides === 'object') {
+    Object.entries(p.subjectOverrides).forEach(([k, v]) => {
+      if (v && typeof v === 'object') {
+        out.subjectOverrides[k] = {
+          strengthMin: v.strengthMin != null ? Number(v.strengthMin) : null,
+          weaknessMax: v.weaknessMax != null ? Number(v.weaknessMax) : null,
+        };
+      }
+    });
+  }
+  return out;
+}
+
+function readPrefs() {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
+    if (!raw) return { globalOverrides: null, subjectOverrides: {} };
+    return normalizePrefs(raw);
+  } catch (_e) {
+    return { globalOverrides: null, subjectOverrides: {} };
+  }
+}
+
+/**
+ * Live-updating read of the saved threshold prefs. Consumers get both the
+ * global overrides and the per-subject map. Handy for the Strengths page and
+ * anything else that needs both.
+ */
+function useSavedSwPrefs() {
+  const [prefs, setPrefs] = useState(readPrefs);
   useEffect(() => {
     const handler = (e) => {
-      if (!e || e.key === PREFS_KEY || e.key === null) setOverrides(read());
+      if (!e || e.key === PREFS_KEY || e.key === null) setPrefs(readPrefs());
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handler);
-      // Also poll once shortly after mount, since same-tab writes don't fire storage events.
-      const t = setTimeout(() => setOverrides(read()), 300);
+      const t = setTimeout(() => setPrefs(readPrefs()), 300);
       return () => { window.removeEventListener('storage', handler); clearTimeout(t); };
     }
     return undefined;
   }, []);
-  return overrides;
+  return prefs;
+}
+
+/**
+ * Returns the GLOBAL overrides only. Used by Dashboard / Smart Recommendations
+ * whose scope is the whole student profile, not a specific subject.
+ */
+export function useSavedSwOverrides() {
+  return useSavedSwPrefs().globalOverrides;
+}
+
+/**
+ * Returns the effective overrides for a specific subject scope. Subject
+ * overrides are INDEPENDENT — they do not fall back to the global overrides
+ * (per product spec). Pass `null` / `'all'` to get the global scope.
+ */
+export function useSavedSwOverridesFor(subject) {
+  const prefs = useSavedSwPrefs();
+  if (!subject || subject === 'all') return prefs.globalOverrides;
+  return prefs.subjectOverrides?.[subject] || null;
+}
+
+// Non-hook variant of the same lookup, for use inside memos.
+export function pickOverridesFor(prefs, subject) {
+  if (!prefs) return null;
+  if (!subject || subject === 'all') return prefs.globalOverrides;
+  return prefs.subjectOverrides?.[subject] || null;
 }
 
 /**

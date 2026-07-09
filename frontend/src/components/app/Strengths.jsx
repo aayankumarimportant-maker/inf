@@ -7,18 +7,29 @@ import { predictedScore, formatGrade, TONE_CLASSES } from '../../lib/predictedGr
 
 const PREFS_KEY = 'infinitysheets_sw_prefs_v1';
 
+// Load & normalize persisted prefs. Backward-compatible with the legacy shape
+// that stored a single `overrides` object at the top level.
 function loadPrefs() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return null;
     const p = JSON.parse(raw);
+    const readOv = (v) => (v && typeof v === 'object') ? {
+      strengthMin: v.strengthMin != null ? Number(v.strengthMin) : null,
+      weaknessMax: v.weaknessMax != null ? Number(v.weaknessMax) : null,
+    } : null;
     return {
       level: ['all', 'strengths', 'weaknesses'].includes(p.level) ? p.level : 'all',
       subject: typeof p.subject === 'string' ? p.subject : 'all',
-      overrides: p.overrides && typeof p.overrides === 'object' ? {
-        strengthMin: p.overrides.strengthMin != null ? Number(p.overrides.strengthMin) : null,
-        weaknessMax: p.overrides.weaknessMax != null ? Number(p.overrides.weaknessMax) : null,
-      } : null,
+      // New shape
+      globalOverrides: readOv(p.globalOverrides) || readOv(p.overrides), // migrate legacy
+      subjectOverrides: (p.subjectOverrides && typeof p.subjectOverrides === 'object')
+        ? Object.fromEntries(
+            Object.entries(p.subjectOverrides)
+              .map(([k, v]) => [k, readOv(v)])
+              .filter(([, v]) => v)
+          )
+        : {},
       customizeOpen: !!p.customizeOpen,
     };
   } catch (_e) {
@@ -37,13 +48,21 @@ export default function Strengths() {
   const initial = useMemo(() => loadPrefs() || {}, []);
   const [level, setLevel] = useState(initial.level || 'all');
   const [subject, setSubject] = useState(initial.subject || 'all');
-  const [overrides, setOverrides] = useState(initial.overrides || null);
+  const [globalOverrides, setGlobalOverrides] = useState(initial.globalOverrides || null);
+  const [subjectOverrides, setSubjectOverrides] = useState(initial.subjectOverrides || {});
   const [customizeOpen, setCustomizeOpen] = useState(!!initial.customizeOpen);
 
   // Persist whenever anything changes
   useEffect(() => {
-    savePrefs({ level, subject, overrides, customizeOpen });
-  }, [level, subject, overrides, customizeOpen]);
+    savePrefs({ level, subject, globalOverrides, subjectOverrides, customizeOpen });
+  }, [level, subject, globalOverrides, subjectOverrides, customizeOpen]);
+
+  // Effective overrides pass into the hooks. When "All subjects" is active we
+  // use the global overrides; when a specific subject is active we use ONLY
+  // that subject's overrides (independent from global, per product spec).
+  const activeSubjectOverrides = subject !== 'all' ? (subjectOverrides[subject] || null) : null;
+  const overridesForGlobalHook = globalOverrides;
+  const overridesForScopedHook = activeSubjectOverrides;
 
   const {
     byTopic,
@@ -53,7 +72,7 @@ export default function Strengths() {
     strengthMin: globalStrengthMin,
     weaknessMax: globalWeaknessMax,
     isCustom: globalIsCustom,
-  } = useStrengthsWeaknesses(ws, overrides);
+  } = useStrengthsWeaknesses(ws, overridesForGlobalHook);
 
   // Subject-scoped worksheets — when a subject is selected, thresholds and
   // the predicted grade are computed off ONLY that subject's data.
@@ -68,7 +87,7 @@ export default function Strengths() {
     strengthMin: scopedStrengthMin,
     weaknessMax: scopedWeaknessMax,
     isCustom: scopedIsCustom,
-  } = useStrengthsWeaknesses(subjectWs, overrides);
+  } = useStrengthsWeaknesses(subjectWs, overridesForScopedHook);
 
   // "avg / thresholds actually driving the UI" — use scoped values whenever
   // a subject is selected so the classification adapts to that subject.
@@ -140,24 +159,50 @@ export default function Strengths() {
     { key: 'weaknesses', label: 'Weaknesses', count: weaknessCount },
   ];
 
-  // Handlers for the override inputs
+  // Handlers for the override inputs — write to the currently-active scope
+  // (global when "All subjects" is selected, per-subject otherwise).
+  const writeOverride = (patch) => {
+    if (subject === 'all') {
+      setGlobalOverrides((prev) => ({
+        strengthMin: prev?.strengthMin != null ? prev.strengthMin : adaptiveStrengthMin,
+        weaknessMax: prev?.weaknessMax != null ? prev.weaknessMax : adaptiveWeaknessMax,
+        ...patch,
+      }));
+    } else {
+      setSubjectOverrides((prev) => {
+        const cur = prev[subject] || {};
+        return {
+          ...prev,
+          [subject]: {
+            strengthMin: cur.strengthMin != null ? cur.strengthMin : adaptiveStrengthMin,
+            weaknessMax: cur.weaknessMax != null ? cur.weaknessMax : adaptiveWeaknessMax,
+            ...patch,
+          },
+        };
+      });
+    }
+  };
   const setStrengthMin = (n) => {
     const v = Number(n);
     if (Number.isNaN(v)) return;
-    setOverrides((prev) => ({
-      strengthMin: v,
-      weaknessMax: prev?.weaknessMax != null ? prev.weaknessMax : adaptiveWeaknessMax,
-    }));
+    writeOverride({ strengthMin: v });
   };
   const setWeaknessMax = (n) => {
     const v = Number(n);
     if (Number.isNaN(v)) return;
-    setOverrides((prev) => ({
-      strengthMin: prev?.strengthMin != null ? prev.strengthMin : adaptiveStrengthMin,
-      weaknessMax: v,
-    }));
+    writeOverride({ weaknessMax: v });
   };
-  const resetThresholds = () => setOverrides(null);
+  const resetThresholds = () => {
+    if (subject === 'all') {
+      setGlobalOverrides(null);
+    } else {
+      setSubjectOverrides((prev) => {
+        const next = { ...prev };
+        delete next[subject];
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -225,7 +270,9 @@ export default function Strengths() {
           <span className="text-slate-400">
             {isCustom ? (
               <span className="inline-flex items-center gap-1">
-                <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10.5px] font-medium">Custom</span>
+                <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10.5px] font-medium">
+                  {isSubjectMode ? `Custom for ${subject}` : 'Custom'}
+                </span>
                 <span>
                   overrides your <span className="tabular-nums font-medium text-slate-600">{avg}%</span>
                   {isSubjectMode ? ` ${subject}` : ''} average
