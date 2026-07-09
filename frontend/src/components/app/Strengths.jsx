@@ -3,6 +3,7 @@ import { Filter, SlidersHorizontal, RotateCcw, Sparkles } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import EmptyStateScene from '../decor/EmptyStateScene';
 import { useStrengthsWeaknesses } from '../../hooks/useStrengthsWeaknesses';
+import { predictedScore, formatGrade, TONE_CLASSES } from '../../lib/predictedGrade';
 
 const PREFS_KEY = 'infinitysheets_sw_prefs_v1';
 
@@ -46,13 +47,48 @@ export default function Strengths() {
 
   const {
     byTopic,
-    avg,
-    adaptiveStrengthMin,
-    adaptiveWeaknessMax,
-    strengthMin,
-    weaknessMax,
-    isCustom,
+    avg: globalAvg,
+    adaptiveStrengthMin: globalAdaptStrengthMin,
+    adaptiveWeaknessMax: globalAdaptWeaknessMax,
+    strengthMin: globalStrengthMin,
+    weaknessMax: globalWeaknessMax,
+    isCustom: globalIsCustom,
   } = useStrengthsWeaknesses(ws, overrides);
+
+  // Subject-scoped worksheets — when a subject is selected, thresholds and
+  // the predicted grade are computed off ONLY that subject's data.
+  const subjectWs = useMemo(
+    () => (subject === 'all' ? ws : ws.filter((w) => w.subject === subject)),
+    [ws, subject]
+  );
+  const {
+    avg: scopedAvg,
+    adaptiveStrengthMin: scopedAdaptStrengthMin,
+    adaptiveWeaknessMax: scopedAdaptWeaknessMax,
+    strengthMin: scopedStrengthMin,
+    weaknessMax: scopedWeaknessMax,
+    isCustom: scopedIsCustom,
+  } = useStrengthsWeaknesses(subjectWs, overrides);
+
+  // "avg / thresholds actually driving the UI" — use scoped values whenever
+  // a subject is selected so the classification adapts to that subject.
+  const isSubjectMode = subject !== 'all';
+  const avg = isSubjectMode ? scopedAvg : globalAvg;
+  const adaptiveStrengthMin = isSubjectMode ? scopedAdaptStrengthMin : globalAdaptStrengthMin;
+  const adaptiveWeaknessMax = isSubjectMode ? scopedAdaptWeaknessMax : globalAdaptWeaknessMax;
+  const strengthMin = isSubjectMode ? scopedStrengthMin : globalStrengthMin;
+  const weaknessMax = isSubjectMode ? scopedWeaknessMax : globalWeaknessMax;
+  const isCustom = isSubjectMode ? scopedIsCustom : globalIsCustom;
+
+  // Predicted grade for the selected subject. Only shown when the student has
+  // picked a specific subject — per product spec: "predicted grade is only for
+  // individual subjects, not overall".
+  const examTrack = state.user?.examTrack || 'CBSE';
+  const predicted = useMemo(() => {
+    if (!isSubjectMode || subjectWs.length === 0) return null;
+    const score = predictedScore(subjectWs);
+    return { score, ...formatGrade(score, examTrack) };
+  }, [isSubjectMode, subjectWs, examTrack]);
 
   // If subject filter references a subject that no longer exists (e.g., after
   // reset demo), silently fall back to "all".
@@ -125,6 +161,16 @@ export default function Strengths() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Predicted grade banner — visible only when a specific subject is selected. */}
+      {predicted && (
+        <PredictedGradeBanner
+          subject={subject}
+          predicted={predicted}
+          examTrack={examTrack}
+          attempts={subjectWs.length}
+        />
+      )}
+
       {/* Filter bar */}
       <div className="rounded-xl border border-[color:var(--color-border)] bg-white p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -180,12 +226,16 @@ export default function Strengths() {
             {isCustom ? (
               <span className="inline-flex items-center gap-1">
                 <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10.5px] font-medium">Custom</span>
-                <span>overrides your <span className="tabular-nums font-medium text-slate-600">{avg}%</span> average</span>
+                <span>
+                  overrides your <span className="tabular-nums font-medium text-slate-600">{avg}%</span>
+                  {isSubjectMode ? ` ${subject}` : ''} average
+                </span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-slate-400" />
-                Adapts to your <span className="tabular-nums font-medium text-slate-600">{avg}%</span> average
+                Adapts to your <span className="tabular-nums font-medium text-slate-600">{avg}%</span>
+                {isSubjectMode ? <span className="ml-1 text-slate-500">{subject}</span> : null} average
               </span>
             )}
           </span>
@@ -306,5 +356,38 @@ function ThresholdInput({ label, dot, value, onChange, min, max, hint }) {
       </div>
       {hint && <span className="text-[10.5px] text-slate-400">{hint}</span>}
     </label>
+  );
+}
+
+
+function PredictedGradeBanner({ subject, predicted, examTrack, attempts }) {
+  const tone = TONE_CLASSES[predicted.tone] || TONE_CLASSES.ok;
+  return (
+    <div
+      className={`rounded-xl border ${tone.border} ${tone.bg} px-4 py-3 flex flex-wrap items-center justify-between gap-3`}
+      data-testid="predicted-grade-banner"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <span className={`inline-flex items-center justify-center w-11 h-11 rounded-lg bg-white/70 border ${tone.border}`}>
+          <span className={`text-[18px] font-bold ${tone.text} tabular-nums`}>{predicted.label}</span>
+        </span>
+        <div className="min-w-0">
+          <div className={`text-[11px] tracking-[0.14em] uppercase font-semibold ${tone.text}`}>
+            {predicted.sub}
+          </div>
+          <div className="text-[14px] font-semibold text-slate-900 truncate">
+            {subject} <span className="text-slate-400 font-normal">· {(examTrack || '').toUpperCase()}</span>
+          </div>
+        </div>
+      </div>
+      <div className="text-right text-[11.5px] text-slate-500 max-w-[280px]">
+        <div className="tabular-nums">
+          Based on {attempts} {attempts === 1 ? 'worksheet' : 'worksheets'}
+        </div>
+        <div className="text-slate-400">
+          Difficulty-weighted, heavy bias toward latest
+        </div>
+      </div>
+    </div>
   );
 }
